@@ -94,8 +94,9 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .plat-win .side a.row-s[aria-current]::before{content:"";position:absolute;left:0;top:calc(50% - 9px);width:3px;height:18px;border-radius:2px;background:var(--sel)}
 .side-n{margin-left:auto;font-size:14px;color:var(--ink3);font-variant-numeric:tabular-nums}
 .side a.row-s[aria-current] .side-n{color:inherit;opacity:.85}
-.side-h{margin:18px 20px 6px;font:600 14px/1 var(--font);color:var(--ink3)}
-.plat-win .side-h{font-size:14.5px;color:var(--ink)}
+.side-h{margin:14px 10px 4px;font:700 11.5px/1 var(--font);letter-spacing:.05em;text-transform:uppercase;color:var(--ink3)}
+.side-nav .side-h:first-child{margin-top:4px}
+.plat-win .side-h{font-size:12px;color:var(--ink2)}
 .side-end{margin-top:auto;padding:10px 10px 4px}
 .side-ok{display:flex;align-items:center;gap:8px;padding:8px 10px 2px;font-size:14px;color:var(--ink2)}
 .side-ok svg{width:16px;height:16px;flex:none;color:var(--accent)}
@@ -132,7 +133,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .plat-mac .top-search input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 45%,transparent)}
 .plat-win .top-search input{height:34px}
 .plat-win .top-search input:focus{background:var(--paper);border-bottom:2px solid var(--sel)}
-body.home .top-search,.plat-mac body.v-search .top-search{visibility:hidden}
+body.home .top-search,body.v-guides .top-search,.plat-mac body.v-search .top-search{visibility:hidden}
 @media (max-width:639px){body.v-search .top-search{display:none}}   /* these pages have their own big search field */
 /* a section's name comes into the toolbar once its large title has scrolled away, as in Apple's apps */
 @media (min-width:640px){.h1-gone .tb-title b{visibility:visible}}
@@ -888,3 +889,62 @@ body.map-maxed{overflow:hidden}
   html.wcap .mapwrap.max,html.wcap .chat-side.open{top:var(--cap-h)}   /* the title bar stays, as in Windows' own apps */
   html.wcap:fullscreen .capband,html.wcap:has(:fullscreen) .capband{display:none}   /* nothing of the band, its drag area included, over a page in full screen */
 }
+
+/* ---------- subtle native transitions & utility tool classes ---------- */
+.card,.need,.banner,.skill,.shelfrow,.starter,.rcard,.srccard,.btn,.chip{transition:border-color .15s ease,background-color .15s ease,transform .12s ease}
+a.card:hover,a.need:hover,a.banner:hover,a.skill:hover,.shelfrow:hover,.starter:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+a.card:hover,a.need:hover,a.banner:hover,a.skill:hover{transform:translateY(-1px)}
+@media (prefers-reduced-motion:reduce){.card,.need,.banner,.skill,.shelfrow,.starter,.rcard,.srccard,.btn,.chip{transition:none}a.card:hover,a.need:hover,a.banner:hover,a.skill:hover{transform:none}}
+
+.tool-card{background:var(--paper);border:1px solid var(--line2);border-radius:var(--r);padding:16px;margin:12px 0;box-shadow:var(--shadow);display:grid;gap:12px}
+.tool-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ctl-input,.ctl-textarea,.ctl-select{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:var(--r2);font:15.5px/1.45 var(--font);padding:9px 12px}
+.ctl-input,.ctl-textarea{width:100%}
+.ctl-textarea{resize:vertical;min-height:96px}
+.ctl-select{min-height:38px;padding:6px 12px;border-radius:var(--r-ctl)}
+.ctl-input:focus-visible,.ctl-textarea:focus-visible,.ctl-select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.ctl-field{display:grid;gap:6px}
+.ctl-field b,.ctl-field label{font-size:15px;font-weight:600}
+
+.pw-wrap{position:relative;display:flex;align-items:center;flex:1;min-width:0}
+.pw-wrap .ctl-input{padding-right:42px}
+.pw-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--ink3);display:grid;place-items:center;cursor:pointer}
+.pw-eye:hover{background:var(--sunk);color:var(--ink)}
+.pw-eye svg{width:18px;height:18px}
+
+.vault-head{display:flex;align-items:center;gap:10px 12px;flex-wrap:wrap}
+.vault-head h1{display:flex;align-items:center;gap:10px;margin:0}
+.vault-head h1 svg{width:28px;height:28px;color:var(--accent)}
+.dirty-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn);font-size:13px;font-weight:650}
+.vault-grid{display:grid;gap:14px;grid-template-columns:1fr}
+@media (min-width:760px){.vault-grid{grid-template-columns:1fr 1fr}}
+.vault-sec{display:grid;gap:6px}
+.vault-sec small{color:var(--ink3);font-size:13.5px}
+
+.chk-summary{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
+@media (min-width:640px){.chk-summary{grid-template-columns:repeat(4,1fr)}}
+.chk-stat{background:var(--paper);border:1px solid var(--line2);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.chk-stat b{font:700 24px/1.15 var(--display);font-variant-numeric:tabular-nums}
+.chk-stat small{font-size:13.5px;color:var(--ink2)}
+.chk-stat.ok b{color:var(--accent)}
+.chk-stat.warn b{color:var(--warn)}
+.chk-stat.error b{color:var(--stop)}
+.chk-row{display:flex;align-items:flex-start;gap:12px;padding:11px 4px;border-top:1px solid var(--line2)}
+.list>.chk-row:first-child{border-top:0}
+.chk-badge{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;margin-top:1px}
+.chk-badge svg{width:16px;height:16px;stroke-width:2.3}
+.chk-badge.ok{background:var(--accent-soft);color:var(--accent)}
+.chk-badge.warn{background:var(--warn-bg);color:var(--warn)}
+.chk-badge.error{background:var(--stop-bg);color:var(--stop)}
+.chk-row b{display:block;font-size:15.5px;line-height:1.3;font-weight:650}
+.chk-row small{display:block;color:var(--ink2);font-size:14.5px;line-height:1.38}
+
+.gl-item{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-top:1px solid var(--line2)}
+.list>.gl-item:first-child{border-top:0}
+.gl-item .gl-text{flex:1;min-width:0;display:grid;gap:3px}
+.gl-item .gl-text b{font-size:16px;line-height:1.35}
+.gl-item .gl-text small{color:var(--ink2);font-size:14px;line-height:1.35}
+.gl-copy{flex:none;min-height:34px;padding:4px 12px;font-size:13.5px}
+
+.chat-model-sel{margin-left:6px;padding:4px 10px;border-radius:var(--r-ctl);border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 13px var(--font);max-width:220px}
+.chat-model-sel:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

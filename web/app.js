@@ -39,6 +39,12 @@ const I = {
   translate: '<path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/>',
   vault: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16" r="1.5"/>',
   check: '<path d="M12 2 3 6v6c0 5 3.8 9.3 9 10 5.2-.7 9-5 9-10V6z"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M17.9 17.9A10.9 10.9 0 0 1 12 19c-6.5 0-10-7-10-7a18.5 18.5 0 0 1 5.1-5.9M9.9 4.2A10 10 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2M2 2l20 20"/>',
+  swap: '<path d="M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/>',
+  ok: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
 };
 const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" class="${cls}">${I[n] || I.book}</svg>`;
 const KIND_ICO = { pdf: 'page', html: 'page', video: 'video', transcript: 'video', pptx: 'page', zim: 'wiki' };
@@ -246,7 +252,7 @@ function parse() {
   return { parts: path.split('/').filter(Boolean).map(decodeURIComponent), q: new URLSearchParams(qs || '') };
 }
 // The sidebar row each page belongs to. Reading pages stay under Library, articles under Encyclopedias; search results select no row.
-const NAV_OF = { '': 'videos', t: '', ask: 'ask', videos: 'videos', watch: 'videos', map: 'map', library: 'library', learn: 'library', browse: 'library', shelf: 'library', collection: 'library', read: 'library', wiki: 'encyclopedias', search: '', saved: 'saved', encyclopedias: 'encyclopedias', translate: 'translate', vault: 'vault', check: 'check', prepare: 'prepare', about: 'about' };
+const NAV_OF = { '': 'videos', guides: 'guides', t: 'guides', prepare: 'guides', ask: 'ask', videos: 'videos', watch: 'videos', map: 'map', library: 'library', learn: 'library', browse: 'library', shelf: 'library', collection: 'library', read: 'library', wiki: 'encyclopedias', search: '', saved: 'saved', encyclopedias: 'encyclopedias', translate: 'translate', vault: 'vault', check: 'check', about: 'about' };
 let leaving = null;  // cleanup hook for the current view (player, chat stream…)
 async function route() {
   const cameFromSide = !!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.side,.tabbar'));
@@ -267,7 +273,7 @@ async function route() {
   current = h;
   const y = typeof at === 'number' ? scrolls[h] : null;   // read now: while the page is rebuilt it scrolls (shorter, then taller), and those scrolls are recorded too
   const v = parts[0] || 'videos';
-  document.body.className = v ? 'v-' + v : 'home';
+  document.body.className = v === 'guides' ? 'home v-guides' : v ? 'v-' + v : 'home';
   const nav = v === 'read' && (q.get('from') || '').startsWith('#/about') ? 'about' : NAV_OF[v] || '';   // Sources, opened from About, stays under About
   $$('[data-nav]').forEach(a => nav && (a.dataset.nav === nav || (a.dataset.also || '').split(' ').includes(nav)) ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
   const rows = $$('.side a.row-s'); rows.forEach(a => a.tabIndex = a.hasAttribute('aria-current') || (!nav && a === rows[0]) ? 0 : -1);   // the sidebar is one Tab stop; arrows move inside it
@@ -279,7 +285,7 @@ async function route() {
   try {
     if (v !== 'map') MapView.stop();
     await topics().catch(() => { });
-    if (!v) await home();
+    if (!v || v === 'guides') await home();
     else if (v === 't') await topicPage(parts[1], parts[2]);
     else if (v === 'ask') await Chat.page(main, parts.slice(1), q);
     else if (v === 'videos') await (parts[1] ? videoRow(parts[1], q) : videosHome());
@@ -403,13 +409,13 @@ $('#side').addEventListener('keydown', e => {
   if (i < 0) return;
   e.preventDefault(); rows[(i + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
 });
-const SECTIONS = ['#/videos', '#/map', '#/ask', '#/encyclopedias', '#/translate', '#/vault', '#/check'];
+const SECTIONS = ['#/guides', '#/videos', '#/map', '#/ask', '#/encyclopedias', '#/translate', '#/vault', '#/check'];
 const findBox = () => [$('#bigQ'), $('#searchQ'), $('#topQ')].find(x => x && x.offsetParent) || $('#chatIn');
 document.addEventListener('keydown', e => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName), cmd = MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
   const is = c => e.code === 'Key' + c || (!e.code && (e.key || '').toUpperCase() === c);   // some input (assistive and remote tools) sends no key code
   if (e.key === '/' && !typing) { e.preventDefault(); findBox().focus() }
-  else if (cmd && !e.altKey && !e.shiftKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); location.hash = SECTIONS[e.key - 1] }
+  else if (cmd && !e.altKey && !e.shiftKey && /^[1-8]$/.test(e.key)) { e.preventDefault(); location.hash = SECTIONS[e.key - 1] }
   else if (cmd && !e.altKey && !e.shiftKey && (is('F') || (!MAC && is('E')))) { e.preventDefault(); const f = findBox(); f.focus(); if (f.select) f.select() }
   else if (MAC && e.metaKey && e.ctrlKey && is('S')) { e.preventDefault(); toggleSide() }   // Windows apps have no key for this: the ☰ button
   else if (MAC ? e.metaKey && e.altKey && is('I') : e.ctrlKey && e.shiftKey && is('I')) { e.preventDefault(); if ($('.about-src', main)) toggleInsp() }
@@ -1084,17 +1090,33 @@ async function savedPage() {
   const c = $('#clr'); if (c) c.onclick = () => { store.set('recent', []); savedPage() };
 }
 
+const copyClip = (text, okMsg = 'Copiado') => navigator.clipboard?.writeText(text).then(() => toast(okMsg), () => toast('Não foi possível copiar'));
+const pwField = (attrs, ph) => `<div class="pw-wrap"><input class="ctl-input" type="password" ${attrs} placeholder="${esc(ph)}"><button type="button" class="pw-eye" aria-label="Mostrar senha" title="Mostrar ou ocultar senha">${ico('eye')}</button></div>`;
+function wirePwEyes(root = main) {
+  $$('.pw-eye', root).forEach(btn => btn.onclick = () => {
+    const inp = btn.previousElementSibling; if (!inp) return;
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    btn.innerHTML = ico(show ? 'eyeOff' : 'eye');
+    btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+  });
+}
+
 async function translatePage(prefill) {
   setTitle('Tradutor offline');
   main.innerHTML = `<h1>Tradutor offline</h1>
     <p class="lead">Traduza trechos de manuais em inglês/espanhol com a IA local instalada ou consulte o guia de frases de emergência (funciona mesmo sem IA).</p>
-    <div class="collection" style="padding:16px;display:grid;gap:12px">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <label>Origem: <select id="trSrc"><option value="auto" selected>Detectar automaticamente</option><option value="en">Inglês</option><option value="es">Espanhol</option><option value="pt-BR">Português (Brasil)</option></select></label>
-        <label>Destino: <select id="trTgt"><option value="pt-BR" selected>Português (Brasil)</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></label>
-        <button class="btn" id="trGo" style="margin-left:auto">${ico('translate')}<span>Traduzir</span></button>
+    <div class="tool-card">
+      <div class="tool-bar">
+        <label class="small">Origem: <select id="trSrc" class="ctl-select"><option value="auto" selected>Detectar automaticamente</option><option value="en">Inglês</option><option value="es">Espanhol</option><option value="pt-BR">Português (Brasil)</option></select></label>
+        <button class="btn plain" id="trSwap" type="button" title="Inverter idiomas" aria-label="Inverter idiomas de origem e destino">${ico('swap')}</button>
+        <label class="small">Destino: <select id="trTgt" class="ctl-select"><option value="pt-BR" selected>Português (Brasil)</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></label>
+        <span style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn plain" id="trClear" type="button">Limpar</button>
+          <button class="btn" id="trGo" type="button">${ico('translate')}<span>Traduzir</span></button>
+        </span>
       </div>
-      <textarea id="trIn" rows="5" placeholder="Cole ou digite aqui um trecho em inglês, espanhol ou português…" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:16px/1.45 var(--font)">${esc(prefill || '')}</textarea>
+      <textarea id="trIn" class="ctl-textarea" rows="5" placeholder="Cole ou digite aqui um trecho em inglês, espanhol ou português… (Ctrl+Enter / Cmd+Enter para traduzir)">${esc(prefill || '')}</textarea>
       <div id="trOut"></div>
     </div>
     ${secHead('Guia rápido de frases de emergência', 'Inglês · Espanhol · Português (Brasil)')}
@@ -1102,27 +1124,45 @@ async function translatePage(prefill) {
     <div id="glList"><p class="loading">Carregando guia de frases…</p></div>`;
   const runTr = async () => {
     const text = $('#trIn').value.trim(), out = $('#trOut');
-    if (!text) { out.innerHTML = '<p class="muted">Digite ou cole um texto acima para traduzir.</p>'; return }
+    if (!text) { out.innerHTML = '<p class="muted small">Digite ou cole um texto acima para traduzir.</p>'; return }
     const b = $('#trGo'); b.disabled = true;
     out.innerHTML = '<p class="loading">Traduzindo offline…</p>';
     try {
       const r = await api('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, source: $('#trSrc').value, target: $('#trTgt').value }) });
       const info = r.mode === 'ai' ? `Traduzido com ${esc(r.model || 'IA local')} em ${r.elapsed_s}s${r.cached ? ' (cache)' : ''}` : 'Modo glossário offline';
-      out.innerHTML = `<div class="notice small">${info}</div><div class="pagetext" style="background:var(--bg);padding:14px;border-radius:12px;border:1px solid var(--line2)">${esc(r.translated)}</div>`;
+      out.innerHTML = `<div class="tool-bar" style="justify-content:space-between;margin-top:4px"><span class="notice small" style="margin:0;flex:1">${info}</span><button class="btn plain" id="trCopy" type="button">${ico('copy')}<span>Copiar tradução</span></button></div>
+        <div class="pagetext" style="background:var(--bg);padding:14px;border-radius:12px;border:1px solid var(--line2)">${esc(r.translated)}</div>`;
+      $('#trCopy').onclick = () => copyClip(r.translated || '', 'Tradução copiada');
     } catch (e) { out.innerHTML = errorBox(e, 'Não foi possível traduzir.') }
     b.disabled = false;
   };
   $('#trGo').onclick = runTr;
+  $('#trSwap').onclick = () => {
+    const src = $('#trSrc'), tgt = $('#trTgt'), sv = src.value, tv = tgt.value;
+    if (sv === 'auto') { src.value = tv; tgt.value = tv === 'pt-BR' ? 'en' : 'pt-BR' }
+    else { src.value = tv; tgt.value = sv }
+  };
+  $('#trClear').onclick = () => { $('#trIn').value = ''; $('#trOut').innerHTML = ''; $('#trIn').focus() };
+  $('#trIn').addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runTr() } });
   if (prefill) runTr();
-  let cats = [];
+  let cats = [], flatItems = [];
   const drawGl = q => {
     const nq = q.trim().toLowerCase();
+    flatItems = [];
     const html = cats.map(c => {
       const rows = c.items.filter(it => !nq || (it.en + ' ' + it.es + ' ' + it.pt).toLowerCase().includes(nq));
       if (!rows.length) return '';
-      return `<section class="collection"><h3>${esc(c.category)}</h3><ul class="list">${rows.map(it => `<li class="row" style="display:grid;gap:4px;cursor:default"><b>${esc(it.pt)}</b><small>EN: ${esc(it.en)}</small><small>ES: ${esc(it.es)}</small></li>`).join('')}</ul></section>`;
+      return `<section class="collection"><h3>${esc(c.category)}</h3><ul class="list">${rows.map(it => {
+        const idx = flatItems.push(it) - 1;
+        return `<li class="gl-item"><span class="gl-text"><b>${esc(it.pt)}</b><small>EN: ${esc(it.en)}</small><small>ES: ${esc(it.es)}</small></span><button class="btn plain gl-copy" type="button" data-glcopy="${idx}">${ico('copy')}<span>Copiar</span></button></li>`;
+      }).join('')}</ul></section>`;
     }).join('');
-    $('#glList').innerHTML = html || '<div class="empty"><p>Nenhuma frase correspondente no guia rápido.</p></div>';
+    const listEl = $('#glList');
+    listEl.innerHTML = html || '<div class="empty"><p>Nenhuma frase correspondente no guia rápido.</p></div>';
+    $$('[data-glcopy]', listEl).forEach(btn => btn.onclick = () => {
+      const it = flatItems[+btn.dataset.glcopy];
+      if (it) copyClip(it.pt, 'Frase copiada');
+    });
   };
   try { cats = (await api('/api/translate/glossary')).glossary || []; drawGl('') } catch (e) { $('#glList').innerHTML = errorBox(e) }
   $('#glQF').addEventListener('submit', e => { e.preventDefault(); drawGl($('#glQ').value) });
@@ -1131,43 +1171,74 @@ async function translatePage(prefill) {
 
 async function vaultPage() {
   setTitle('Cofre de Emergência');
-  let opened = null;   // {id, name, password, payload}
+  let opened = null, dirty = false;   // opened: {id, name, password, payload}
   const SEC_META = [
     ['documents', 'Documentos pessoais', 'CPF, RG, CNH, passaporte, certidões, apólices de seguro…'],
     ['medical', 'Ficha médica e alergias', 'Tipo sanguíneo, alergias graves, remédios contínuos, contatos médicos, cartão SUS…'],
     ['contacts', 'Contatos de emergência e ponto de encontro', 'Telefones da família, ponto de encontro caso a rede caia, vizinhos de confiança…'],
     ['notes', 'Senhas, bancos e anotações seguras', 'Chaves de recuperação, informações bancárias, instruções para a família…'],
   ];
-  const draw = async (err = '', msg = '') => {
+  const syncSections = () => {
+    if (!opened) return;
+    opened.payload.sections = opened.payload.sections || {};
+    $$('[data-sec]', main).forEach(ta => opened.payload.sections[ta.dataset.sec] = ta.value);
+  };
+  const saveCurrent = async () => {
+    if (!opened) return;
+    syncSections();
+    try {
+      const r = await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', id: opened.id, password: opened.password, payload: opened.payload }) });
+      opened.payload = r.payload;
+      dirty = false;
+      draw('', 'Cofre salvo e criptografado com sucesso.');
+    } catch (e) { draw(e.message, '', dirty) }
+  };
+  const onVaultKey = e => {
+    if (opened && (e.metaKey || e.ctrlKey) && (e.key || '').toLowerCase() === 's') { e.preventDefault(); saveCurrent() }
+  };
+  addEventListener('keydown', onVaultKey);
+  leaving = () => removeEventListener('keydown', onVaultKey);
+
+  const draw = async (err = '', msg = '', keepDirty = false) => {
+    dirty = !!keepDirty;
     let list = [];
     try { list = (await api('/api/vault/list')).vaults || [] }
     catch (e) { main.innerHTML = `<h1>Cofre criptografado</h1>${errorBox(e, 'Cofre indisponível neste acesso')}`; return }
     if (opened) {
       const p = opened.payload, atts = p.attachments || [];
-      main.innerHTML = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1>${ico('vault')} ${esc(opened.name)}</h1><button class="btn plain" id="vLock" style="margin-left:auto">Trancar cofre</button></div>
+      main.innerHTML = `<div class="vault-head"><h1>${ico('vault')}<span>${esc(opened.name)}</span></h1><span class="dirty-badge" id="vDirty" ${dirty ? '' : 'hidden'}>Alterações não salvas</span><button class="btn plain" id="vLock" type="button" style="margin-left:auto">Trancar cofre</button></div>
         <p class="lead">Desbloqueado apenas na memória desta janela. Ao sair ou trancar, os dados voltam a ficar criptografados no disco.</p>
         ${err ? `<div class="err">${esc(err)}</div>` : msg ? `<div class="notice">${esc(msg)}</div>` : ''}
-        <div class="collection" style="padding:16px;display:grid;gap:14px">
-          ${SEC_META.map(([k, lbl, ph]) => `<label style="display:grid;gap:6px"><b>${esc(lbl)}</b><textarea data-sec="${k}" rows="4" placeholder="${esc(ph)}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:15.5px/1.45 var(--font)">${esc((p.sections || {})[k] || '')}</textarea></label>`).join('')}
+        <div class="tool-card">
+          <div class="vault-grid">
+            ${SEC_META.map(([k, lbl, ph]) => `<label class="vault-sec"><b>${esc(lbl)}</b><textarea class="ctl-textarea" data-sec="${k}" rows="5" placeholder="${esc(ph)}">${esc((p.sections || {})[k] || '')}</textarea></label>`).join('')}
+          </div>
           <div>
-            <b>Anexos cifrados dentro do cofre</b> <span class="small muted">(até 120 KB por arquivo; ex.: foto compacta de documento, receita, TXT/PDF pequeno)</span>
+            <b>Anexos cifrados dentro do cofre</b> <small class="muted">(até 120 KB por arquivo; ex.: foto compacta de documento, receita, TXT/PDF pequeno)</small>
             <ul class="list" id="vAtts" style="margin-top:8px">${atts.length ? atts.map((a, idx) => `<li class="row" style="display:flex;align-items:center;gap:10px"><span><b>${esc(a.name)}</b><small>${Math.max(1, Math.round((a.size || 0) / 1024))} KB</small></span><button class="btn plain" type="button" data-dl="${idx}" style="margin-left:auto">Baixar</button><button class="btn plain" type="button" data-rmatt="${idx}">Remover</button></li>`).join('') : '<li class="muted small">Nenhum anexo adicionado.</li>'}</ul>
             <p style="margin-top:8px"><input type="file" id="vFile"></p>
           </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn" id="vSave">${ico('save')}<span>Salvar alterações no cofre</span></button>
-            <button class="btn plain" id="vDel" style="margin-left:auto;color:var(--stop)">Excluir cofre</button>
+          <div class="tool-bar">
+            <button class="btn" id="vSave" type="button">${ico('save')}<span>Salvar alterações no cofre</span></button>
+            <span class="small muted">Atalho: ${MAC ? '⌘S' : 'Ctrl+S'}</span>
+            <button class="btn plain" id="vDel" type="button" style="margin-left:auto;color:var(--stop)">Excluir cofre</button>
           </div>
         </div>`;
-      $('#vLock').onclick = () => { opened = null; draw('', 'Cofre trancado.') };
+      const markDirty = () => { dirty = true; const b = $('#vDirty'); if (b) b.hidden = false };
+      $$('[data-sec]', main).forEach(ta => ta.addEventListener('input', markDirty));
+      $('#vLock').onclick = () => {
+        if (dirty && !confirm('Há alterações não salvas neste cofre. Descartar alterações e trancar?')) return;
+        opened = null; draw('', 'Cofre trancado.');
+      };
       $('#vFile').onchange = ev => {
         const f = ev.target.files && ev.target.files[0]; if (!f) return;
-        if (f.size > 120 * 1024) { draw('Arquivo maior que 120 KB para manter o cofre leve.'); return }
+        if (f.size > 120 * 1024) { syncSections(); draw('Arquivo maior que 120 KB para manter o cofre leve.', '', dirty); return }
         const rd = new FileReader();
         rd.onload = () => {
+          syncSections();
           const b64 = String(rd.result || '').split(',')[1] || '';
           p.attachments = (p.attachments || []).concat([{ id: Date.now().toString(36), name: f.name, mime: f.type || 'application/octet-stream', size: f.size, data_b64: b64 }]);
-          draw('', `Anexo “${f.name}” adicionado — clique em Salvar alterações.`);
+          draw('', `Anexo “${f.name}” adicionado — clique em Salvar alterações.`, true);
         };
         rd.readAsDataURL(f);
       };
@@ -1179,45 +1250,40 @@ async function vaultPage() {
         link.download = a.name; document.body.append(link); link.click();
         setTimeout(() => { URL.revokeObjectURL(link.href); link.remove() }, 500);
       });
-      $$('[data-rmatt]', main).forEach(b => b.onclick = () => { p.attachments.splice(+b.dataset.rmatt, 1); draw() });
-      $('#vSave').onclick = async () => {
-        p.sections = p.sections || {};
-        $$('[data-sec]', main).forEach(ta => p.sections[ta.dataset.sec] = ta.value);
-        try {
-          const r = await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', id: opened.id, password: opened.password, payload: p }) });
-          opened.payload = r.payload;
-          draw('', 'Cofre salvo e criptografado com sucesso.');
-        } catch (e) { draw(e.message) }
-      };
+      $$('[data-rmatt]', main).forEach(b => b.onclick = () => { syncSections(); p.attachments.splice(+b.dataset.rmatt, 1); draw('', 'Anexo removido — clique em Salvar alterações.', true) });
+      $('#vSave').onclick = saveCurrent;
       $('#vDel').onclick = async () => {
         if (!confirm(`Excluir permanentemente o cofre “${opened.name}”? Não há como desfazer.`)) return;
         try {
           await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id: opened.id, password: opened.password }) });
           opened = null;
           draw('', 'Cofre excluído.');
-        } catch (e) { draw(e.message) }
+        } catch (e) { draw(e.message, '', dirty) }
       };
       return;
     }
     main.innerHTML = `<h1>Cofre criptografado de emergência</h1>
       <p class="lead">Guarde documentos, ficha médica, telefones da família e senhas cifrados localmente com senha forte (PBKDF2 + HMAC-SHA256) dentro da biblioteca.</p>
       ${err ? `<div class="err">${esc(err)}</div>` : msg ? `<div class="notice">${esc(msg)}</div>` : ''}
-      ${list.length ? `${secHead('Cofres neste dispositivo')}<div class="cards2">${list.map(v => `<div class="card" style="display:grid;gap:8px"><b>${esc(v.name)}</b><small>Atualizado em ${esc(v.updated.slice(0, 16).replace('T', ' '))} · ${(v.bytes / 1024).toFixed(1)} KB</small><div style="display:flex;gap:8px"><input type="password" data-pw="${esc(v.id)}" placeholder="Senha do cofre" style="flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"><button class="btn" data-open="${esc(v.id)}">Abrir</button></div></div>`).join('')}</div>` : ''}
+      ${list.length ? `${secHead('Cofres neste dispositivo')}<div class="cards2">${list.map(v => `<div class="card" style="display:grid;gap:8px"><b>${esc(v.name)}</b><small>Atualizado em ${esc(v.updated.slice(0, 16).replace('T', ' '))} · ${(v.bytes / 1024).toFixed(1)} KB</small><div style="display:flex;gap:8px;align-items:center">${pwField(`data-pw="${esc(v.id)}"`, 'Senha do cofre')}<button class="btn" type="button" data-open="${esc(v.id)}">Abrir</button></div></div>`).join('')}</div>` : ''}
       ${secHead('Criar novo cofre')}
-      <form id="vNew" class="collection" style="padding:16px;display:grid;gap:10px;max-width:520px">
-        <label>Nome do cofre <input id="vName" required placeholder="ex.: Documentos da Família" style="width:100%;margin-top:4px;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></label>
-        <label>Senha (mínimo 4 caracteres — guarde bem, não há recuperação!) <input id="vPass" type="password" required minlength="4" placeholder="Escolha uma senha forte" style="width:100%;margin-top:4px;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></label>
+      <form id="vNew" class="tool-card" style="max-width:520px">
+        <div class="ctl-field"><label for="vName">Nome do cofre</label><input id="vName" class="ctl-input" required placeholder="ex.: Documentos da Família"></div>
+        <div class="ctl-field"><label for="vPass">Senha (mínimo 4 caracteres — guarde bem, não há recuperação!)</label>${pwField('id="vPass" required minlength="4"', 'Escolha uma senha forte')}</div>
         <button class="btn" type="submit">${ico('vault')}<span>Criar cofre criptografado</span></button>
       </form>`;
-    $$('[data-open]', main).forEach(b => b.onclick = async () => {
-      const id = b.dataset.open, pw = ($(`[data-pw="${id}"]`, main) || {}).value || '';
+    wirePwEyes(main);
+    const tryOpen = async id => {
+      const pw = ($(`[data-pw="${id}"]`, main) || {}).value || '';
       if (!pw) { draw('Digite a senha para abrir o cofre.'); return }
       try {
         const r = await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open', id, password: pw }) });
         opened = { id: r.id, name: r.name, password: pw, payload: r.payload };
         draw();
       } catch (e) { draw(e.message) }
-    });
+    };
+    $$('[data-open]', main).forEach(b => b.onclick = () => tryOpen(b.dataset.open));
+    $$('[data-pw]', main).forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryOpen(inp.dataset.pw) } }));
     $('#vNew').onsubmit = async e => {
       e.preventDefault();
       const name = $('#vName').value.trim(), pw = $('#vPass').value;
@@ -1235,9 +1301,10 @@ async function checkPage() {
   setTitle('Diagnóstico offline');
   main.innerHTML = `<h1>Diagnóstico do Último Livro</h1>
     <p class="lead">Confere offline se a biblioteca, mapas estaduais, enciclopédias (.zim), modelos de IA e cofres estão íntegros e compatíveis com este computador.</p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
+    <div class="tool-bar" style="margin:14px 0">
       <button class="btn" id="chkFast">${ico('check')}<span>Verificação rápida</span></button>
       <button class="btn plain" id="chkFull">Verificação completa (com SHA-256)</button>
+      ${IN_WINDOW ? '<a class="btn plain" href="/ui/setup.html#manage" style="margin-left:auto">Biblioteca e IA local</a>' : ''}
     </div>
     <div id="chkOut"></div>`;
   const run = async full => {
@@ -1245,14 +1312,21 @@ async function checkPage() {
     out.innerHTML = `<p class="loading">${full ? 'Calculando SHA-256 de todos os arquivos — pode levar alguns minutos…' : 'Executando diagnóstico rápido…'}</p>`;
     try {
       const r = await api('/api/check' + (full ? '?full=1' : ''));
-      const iconFor = st => st === 'ok' ? '✅' : st === 'warn' ? '⚠️' : '❌';
-      out.innerHTML = `<div class="${r.ok ? 'notice' : 'err'}"><b>${r.ok ? 'Tudo em ordem nos itens críticos' : 'Há problemas que precisam de atenção'}</b> · ${r.summary.ok} OK, ${r.summary.warn} avisos, ${r.summary.error} erro(s) (${r.elapsed_s}s)</div>
-        ${r.sections.map(s => `<section class="collection"><h3>${esc(s.title)}</h3><ul class="list">${s.items.map(it => `<li class="row" style="cursor:default"><span>${iconFor(it.status)} <b>${esc(it.label)}</b><small>${esc(it.detail)}</small></span></li>`).join('')}</ul></section>`).join('')}
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-          <button class="btn plain" id="chkCopy">Copiar relatório</button>
+      const badgeFor = st => `<span class="chk-badge ${esc(st)}">${ico(st === 'ok' ? 'ok' : st === 'warn' ? 'warn' : 'x')}</span>`;
+      out.innerHTML = `<div class="${r.ok ? 'notice' : 'err'}"><b>${r.ok ? 'Tudo em ordem nos itens críticos' : 'Há problemas que precisam de atenção'}</b> · ${r.full ? 'Verificação completa (SHA-256)' : 'Verificação rápida'}</div>
+        <div class="chk-summary">
+          <div class="chk-stat ok"><b>${r.summary.ok}</b><small>Itens OK</small></div>
+          <div class="chk-stat warn"><b>${r.summary.warn}</b><small>Avisos</small></div>
+          <div class="chk-stat error"><b>${r.summary.error}</b><small>Erros</small></div>
+          <div class="chk-stat"><b>${r.elapsed_s}s</b><small>Duração</small></div>
+        </div>
+        ${r.sections.map(s => `<section class="collection"><h3>${esc(s.title)}</h3><ul class="list">${s.items.map(it => `<li class="chk-row">${badgeFor(it.status)}<span><b>${esc(it.label)}</b><small>${esc(it.detail)}</small></span></li>`).join('')}</ul></section>`).join('')}
+        <div class="tool-bar" style="margin-top:16px">
+          <button class="btn plain" id="chkCopy">${ico('copy')}<span>Copiar relatório</span></button>
           <button class="btn plain" id="chkSave">Baixar relatório (.txt)</button>
+          ${IN_WINDOW && (r.summary.warn > 0 || r.summary.error > 0) ? '<a class="btn" href="/ui/setup.html#manage" style="margin-left:auto">Gerenciar ou reparar na Biblioteca e IA</a>' : ''}
         </div>`;
-      $('#chkCopy').onclick = () => navigator.clipboard?.writeText(r.report_text).then(() => toast('Relatório copiado'));
+      $('#chkCopy').onclick = () => copyClip(r.report_text || '', 'Relatório copiado');
       $('#chkSave').onclick = () => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([r.report_text], { type: 'text/plain;charset=utf-8' }));

@@ -698,7 +698,7 @@ class _Go(Foundation.NSObject):
         self.view.evaluateJavaScript_completionHandler_("document.dispatchEvent(new KeyboardEvent('keydown',{key:'f',code:'KeyF',metaKey:true}))", None)
 
 
-GO = [('Vídeos', '#/videos'), ('Mapa', '#/map'), ('Chat', '#/ask'), ('Enciclopédias', '#/encyclopedias'), ('Tradutor', '#/translate'), ('Cofre', '#/vault')]
+GO = [('Guias', '#/guides'), ('Vídeos', '#/videos'), ('Mapa', '#/map'), ('Chat', '#/ask'), ('Enciclopédias', '#/encyclopedias'), ('Tradutor', '#/translate'), ('Cofre', '#/vault'), ('Diagnóstico', '#/check')]
 CTRL_CMD = AppKit.NSEventModifierFlagControl | AppKit.NSEventModifierFlagCommand
 OPT_CMD = AppKit.NSEventModifierFlagOption | AppKit.NSEventModifierFlagCommand
 

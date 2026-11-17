@@ -57,7 +57,7 @@ const Chat = (() => {
         <div class="chat-top">
           <button class="btn plain chat-histbtn" id="openSide" aria-label="Mostrar conversas">${ico("clock")}<span>Conversas</span></button>
           <div class="chat-status" id="chatStatus" aria-live="polite"></div>
-          <button class="btn plain chat-thinkbtn" id="toggleThink" type="button" aria-pressed="${hideThought()}">${hideThought() ? 'Só resultado (mostrar pensamento)' : 'Não mostrar pensamento'}</button>
+          <button class="btn plain chat-thinkbtn" id="toggleThink" type="button" aria-pressed="${hideThought()}" title="${hideThought() ? 'Mostrando só a resposta final; clique para ver passos e pensamento' : 'Mostrando passos e pensamento; clique para ver só o resultado'}">${hideThought() ? 'Só resultado (mostrar pensamento)' : 'Não mostrar pensamento'}</button>
           <a class="btn plain" href="#/ask" id="newChat" aria-label="Nova conversa">${ico('ask')}<span>Nova</span></a>
         </div>
         ${q.get('from') && !cur ? `<div style="margin:2px 0 8px">${backButton(q.get('from'))}</div>` : ''}
@@ -90,6 +90,7 @@ const Chat = (() => {
       if (bt) {
         bt.setAttribute('aria-pressed', String(next));
         bt.textContent = next ? 'Só resultado (mostrar pensamento)' : 'Não mostrar pensamento';
+        bt.title = next ? 'Mostrando só a resposta final; clique para ver passos e pensamento' : 'Mostrando passos e pensamento; clique para ver só o resultado';
       }
       renderLog();
       toast(next ? 'Mostrando apenas o resultado' : 'Mostrando passos e pensamento');
@@ -134,7 +135,7 @@ const Chat = (() => {
     const still = ix.state === 'indexing' || ix.state === 'indexing (other process)' ? ` · <span class="muted">ainda indexando (${(ix.chunks || 0).toLocaleString()} trechos até agora)</span>` : '';
     const models = (l && l.installed_models) || [];
     const selHtml = models.length > 1
-      ? ` <select id="chatModelSel" aria-label="Modelo de IA" style="margin-left:6px;padding:3px 8px;border-radius:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 13px var(--font);max-width:210px">${models.map(m => `<option value="${esc(m.id)}"${m.id === l.model_id ? ' selected' : ''}>${esc(m.title || m.name)}</option>`).join('')}</select>`
+      ? ` <select id="chatModelSel" class="chat-model-sel" aria-label="Modelo de IA">${models.map(m => `<option value="${esc(m.id)}"${m.id === l.model_id ? ' selected' : ''}>${esc(m.title || m.name)}</option>`).join('')}</select>`
       : '';
     if (l && (/ready|stopped|loading/.test(l.state) || !s.online)) {
       const [ok, line] = localLine(l);
