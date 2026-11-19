@@ -134,9 +134,11 @@ const pageImg = (id, p, w) => `/api/page/${encodeURIComponent(id)}/${p || 1}.png
 const hostOf = u => { try { return new URL(u).host } catch { return u } };   // a web address shown as its site only
 const askLink = (about, label = 'Perguntar sobre isto') => `<a class="btn plain" title="${esc(label)}" href="#/ask?about=${encodeURIComponent(about)}&${fromQ()}">${ico('ask')}<span>${label}</span></a>`;
 
+const zimHref = p => String(p || '').replace(/^\/?zim[:/]/, '').split('/').map(encodeURIComponent).join('/');
 function hrefFor(item, src) {
   src = src || item.src || item;
-  if (item.zim) return '#/wiki/' + item.zim.replace(/^\/?zim\//, '') + '?' + fromQ();
+  if (item.zim) return '#/wiki/' + zimHref(item.zim) + '?' + fromQ();
+  if (src && (src.kind === 'zim' || String(src.id || '').startsWith('zim:'))) return '#/wiki/' + zimHref(src.id || item.doc_id) + '?' + fromQ();
   if (!src || !src.id) return '#/';
   if (src.kind === 'video') return `#/watch/${encodeURIComponent(src.id)}?${item.t ? 't=' + item.t + '&' : ''}${fromQ()}`;
   return `#/read/${encodeURIComponent(src.id)}?${item.page ? 'p=' + item.page + '&' : ''}${fromQ()}`;
@@ -198,6 +200,7 @@ function backButton(from, fallback = 'Voltar') {
   let label = fallback, href = from || '#/';
   const m = /^#\/t\/([\w-]+)/.exec(href);
   if (m && topicById(m[1])) label = SHORT[m[1]] || topicById(m[1]).title;
+  else if (href.startsWith('#/guides')) label = 'Guias';
   else if (href.startsWith('#/search')) label = 'Resultados da busca';
   else if (href.startsWith('#/ask')) label = 'Voltar ao chat';
   else if (href.startsWith('#/saved')) label = 'Salvos';
@@ -205,6 +208,10 @@ function backButton(from, fallback = 'Voltar') {
   else if (href.startsWith('#/videos')) label = 'Vídeos';
   else if (href.startsWith('#/watch')) label = 'Vídeo';
   else if (href.startsWith('#/read')) label = 'Voltar à página';
+  else if (href.startsWith('#/translate')) label = 'Tradutor';
+  else if (href.startsWith('#/vault')) label = 'Cofre';
+  else if (href.startsWith('#/check')) label = 'Diagnóstico';
+  else if (href.startsWith('#/about')) label = 'Sobre';
   else if (href.startsWith('#/library') || href.startsWith('#/shelf') || href.startsWith('#/collection') || href.startsWith('#/encyclopedias') || href.startsWith('#/prepare')) label = 'Biblioteca';
   else if (href === '#/' || href === '#') label = 'Vídeos';
   return `<a class="back" href="${esc(href)}" data-back>${ico('back')}<span>${esc(label)}</span></a>`;
@@ -432,7 +439,7 @@ function searchBox(id, value, placeholder, button = 'Buscar') {
 
 /* --------------------------------------------------------------- home -- */
 async function home() {
-  setTitle('');
+  setTitle('Guias');
   const tile = t => `<a class="need" href="#/t/${t.id}" ${tcStyle(t.id)}><span class="ico">${ico(t.id)}</span><b>${esc(SHORT[t.id] || t.title)}</b><small>${esc(t.short || '')}</small></a>`;
   const cont = await continueItems();
   const pins = (await libInfo()).pins !== false;
@@ -498,7 +505,7 @@ async function topicPage(id, open) {
   const sec = (icon, title, items) => items && items.length ? `<details class="more"><summary>${ico(icon)}<span>${title} <span class="n">· ${items.length}</span></span></summary><div class="body"><ul class="list">${items.map(i => rowItem({ ...i, preview: true })).join('')}</ul></div></details>` : '';
   const vids = topicVideos(t);
   const related = (t.related || []).map(topicById).filter(Boolean);
-  main.innerHTML = `<div class="ghero" ${tcStyle(id)}><div class="ghero-in">${crumbs([['Vídeos', '#/videos'], [learn ? 'Aprender um ofício' : 'Precisa de ajuda agora', learn ? '#/library' : '#/'], [SHORT[id] || t.title]])}
+  main.innerHTML = `<div class="ghero" ${tcStyle(id)}><div class="ghero-in">${crumbs([['Vídeos', '#/videos'], [learn ? 'Aprender um ofício' : 'Precisa de ajuda agora', learn ? '#/library' : '#/guides'], [SHORT[id] || t.title]])}
       <div class="row1"><span class="ico">${ico(t.id)}</span><h1>${esc(t.title)}</h1></div><p class="lead">${esc(t.intro || '')}</p>
       <div class="vactions" style="margin-bottom:0">${askLink('topic:' + id, 'Faça uma pergunta sobre isto')}</div></div></div>
     <div class="gcols" ${tcStyle(id)}><div>
@@ -648,7 +655,7 @@ async function reader(id, page, from, view) {
   const selfHref = `#/read/${encodeURIComponent(id)}?p=${page}`;
   remember({ key: 'd:' + id, title: d.title, href: selfHref, sub: (isPdf ? 'Página ' + page + ' · ' : '') + (d.publisher || '') });
   const go = (p, v = view) => `#/read/${encodeURIComponent(id)}?p=${p}&view=${v}${from ? '&from=' + encodeURIComponent(from) : ''}`;
-  const views = isPdf ? [['page', 'Página'], ['text', 'Texto'], ['pt', 'Traduzir (PT)'], ['pdf', 'PDF completo']] : isWeb ? [['web', 'Página'], ['text', 'Somente texto'], ['pt', 'Traduzir (PT)']] : [];
+  const views = isPdf ? [['page', 'Página'], ['text', 'Texto'], ['pt', 'Traduzir (PT)'], ['pdf', 'PDF completo']] : isWeb ? [['web', 'Página'], ['text', 'Somente texto'], ['pt', 'Traduzir (PT)']] : [['text', 'Texto'], ['pt', 'Traduzir (PT)']];
   main.innerHTML = `
     <div class="rtop">${backButton(from)}</div>
     <h1 class="rtitle">${esc(d.title)}</h1>
@@ -696,7 +703,8 @@ async function reader(id, page, from, view) {
       } else {
         const tr = await api('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: txt, source: 'auto', target: 'pt-BR', doc_id: id, page: isPdf ? page : 1 }) });
         const badge = tr.mode === 'ai' ? `Traduzido offline via ${esc(tr.model || 'IA local')}${tr.cached ? ' (cache)' : ''} em ${tr.elapsed_s}s` : 'Modo glossário offline (sem IA local instalada)';
-        body.innerHTML = `<div class="notice small">${badge} · Confira sempre números, doses e avisos críticos na visualização Página original.</div><div class="pagetext">${esc(tr.translated || '')}</div>`;
+        body.innerHTML = `<div class="tool-bar" style="justify-content:space-between;margin-bottom:10px"><div class="notice small" style="margin:0;flex:1">${badge} · Confira sempre números, doses e avisos críticos na visualização original.</div><button class="btn plain" id="docTrCopy" type="button">${ico('copy')}<span>Copiar tradução</span></button></div><div class="pagetext">${esc(tr.translated || '')}</div>`;
+        $('#docTrCopy').onclick = () => copyClip(tr.translated || '', 'Tradução copiada');
       }
     } catch (e) { body.innerHTML = errorBox(e, 'Não foi possível traduzir esta página.') }
   } else {
@@ -922,9 +930,10 @@ async function zimResults(q, el, max = 8, heading = '') {
   try {
     const hits = await api('/api/collection-search?q=' + encodeURIComponent(q));
     if (!hits.length) { el.innerHTML = heading ? '' : `<div class="empty"><span class="e-ico">${ico('wiki')}</span><b>Nenhum artigo encontrado</b><p>Tente outro termo para a mesma coisa.</p></div>`; return false }
-    const ord = ['mdwiki', 'wikibooks', 'appropedia', 'wikipedia'];
-    hits.sort((a, b) => ord.findIndex(k => a.collection.startsWith(k)) - ord.findIndex(k => b.collection.startsWith(k)));
-    el.innerHTML = `${heading ? `<h2>${heading}</h2>` : ''}<ul class="list">${hits.slice(0, max).map(h => `<li><a class="row" href="#/wiki/${esc(h.path.replace(/^zim\//, ''))}?${fromQ()}"><span class="k">${ico('wiki')}</span><span><b>${esc(h.title)}</b><small>${esc(zimLabel(h.collection))}</small></span></a></li>`).join('')}</ul>`;
+    const ord = ['wikipedia_pt_medicine', 'ifixit_pt', 'wikibooks_pt', 'wikipedia_pt', 'wikivoyage_pt', 'wiktionary_pt', 'phet_pt', 'mdwiki', 'wikibooks', 'appropedia', 'wikipedia'];
+    const rank = col => { const idx = ord.findIndex(k => col.startsWith(k)); return idx < 0 ? 99 : idx; };
+    hits.sort((a, b) => rank(a.collection) - rank(b.collection));
+    el.innerHTML = `${heading ? `<h2>${heading}</h2>` : ''}<ul class="list">${hits.slice(0, max).map(h => `<li><a class="row" href="#/wiki/${zimHref(h.path)}?${fromQ()}"><span class="k">${ico('wiki')}</span><span><b>${esc(h.title)}</b><small>${esc(zimLabel(h.collection))}</small></span></a></li>`).join('')}</ul>`;
     return true;
   } catch (e) { el.innerHTML = heading ? '' : `<p class="muted">A busca nas enciclopédias não está disponível no momento (${esc(e.message)}).</p>`; return false }
 }
@@ -1004,7 +1013,11 @@ async function passages(q, seq) {
   try {
     const d = await api('/api/retrieve?q=' + encodeURIComponent(q) + '&k=6&kind=manual');
     if (seq !== searchSeq || !d.results.length || !$('#spass')) return false;
-    $('#spass').innerHTML = secHead('Páginas mais relevantes', d.semantic && !d.semantic.chunks ? 'Encontrado pelas suas palavras' : 'Encontrado pelo sentido e pelas palavras') + `<div class="rcards">${d.results.map(r => rcard({ src: { id: r.doc_id, kind: r.kind, title: r.title, publisher: r.publisher, year: r.year, pages: r.pages, trust: r.trust }, page: r.page, label: r.title, note: (r.excerpt || '').slice(0, 220) + '…' })).join('')}</div>`;
+    $('#spass').innerHTML = secHead('Páginas mais relevantes', d.semantic && !d.semantic.chunks ? 'Encontrado pelas suas palavras' : 'Encontrado pelo sentido e pelas palavras') + `<div class="rcards">${d.results.map(r => {
+      const isZim = r.kind === 'zim' || String(r.doc_id || '').startsWith('zim:');
+      if (isZim) return rcard({ zim: String(r.doc_id || '').replace(/^zim:/, ''), title: r.publisher || 'Enciclopédia', label: r.title, note: (r.excerpt || '').slice(0, 220) + '…' });
+      return rcard({ src: { id: r.doc_id, kind: r.kind, title: r.title, publisher: r.publisher, year: r.year, pages: r.pages, trust: r.trust }, page: r.page, label: r.title, note: (r.excerpt || '').slice(0, 220) + '…' });
+    }).join('')}</div>`;
     return true;
   } catch { return false }
 }
@@ -1029,7 +1042,7 @@ async function library() {
   </div>
   ${secHead('Aprender um ofício', 'Roteiros passo a passo que começam do básico')}
   <div class="needs">${learnTopics().map(t => `<a class="need" href="#/t/${t.id}" ${tcStyle(t.id)}><span class="ico">${ico(t.id)}</span><b>${esc(SHORT[t.id] || t.title)}</b><small>${esc(t.short || '')} · ${(t.route || []).length} etapas</small></a>`).join('')}</div>
-  ${zims.length ? secHead('Enciclopédias', 'Cópias offline completas', '<a href="#/encyclopedias">Pesquisar</a>') + `<div class="cards2">${zims.map(z => `<a class="card" href="#/wiki/${z[0]}/?from=${encodeURIComponent('#/library')}"><span class="ico">${ico(z[3])}</span><b>${esc(z[1])}</b><small>${esc(z[2])}</small></a>`).join('')}</div>` : ''}
+  ${zims.length ? secHead('Enciclopédias', 'Cópias offline completas', '<a href="#/encyclopedias">Pesquisar</a>') + `<div class="cards2">${zims.map(z => `<a class="card" href="#/wiki/${encodeURIComponent(z[0])}/?from=${encodeURIComponent('#/library')}"><span class="ico">${ico(z[3])}</span><b>${esc(z[1])}</b><small>${esc(z[2])}</small></a>`).join('')}</div>` : ''}
   ${secHead('Explorar por assunto', 'Todos os manuais, páginas da web salvas e vídeos')}<div id="shelves"><p class="loading">Carregando…</p></div>
   <p style="margin-top:20px"><a href="#/about">Sobre esta biblioteca e suas fontes</a>${IN_WINDOW ? ' · <a href="/ui/setup.html#manage">Biblioteca e IA local</a>' : ''}</p>`;
   try {
@@ -1197,7 +1210,7 @@ async function vaultPage() {
     if (opened && (e.metaKey || e.ctrlKey) && (e.key || '').toLowerCase() === 's') { e.preventDefault(); saveCurrent() }
   };
   addEventListener('keydown', onVaultKey);
-  leaving = () => removeEventListener('keydown', onVaultKey);
+  leaving = () => { removeEventListener('keydown', onVaultKey); opened = null; dirty = false; };
 
   const draw = async (err = '', msg = '', keepDirty = false) => {
     dirty = !!keepDirty;
@@ -1214,7 +1227,7 @@ async function vaultPage() {
             ${SEC_META.map(([k, lbl, ph]) => `<label class="vault-sec"><b>${esc(lbl)}</b><textarea class="ctl-textarea" data-sec="${k}" rows="5" placeholder="${esc(ph)}">${esc((p.sections || {})[k] || '')}</textarea></label>`).join('')}
           </div>
           <div>
-            <b>Anexos cifrados dentro do cofre</b> <small class="muted">(até 120 KB por arquivo; ex.: foto compacta de documento, receita, TXT/PDF pequeno)</small>
+            <b>Anexos cifrados dentro do cofre</b> <small class="muted">(até 20 arquivos, máx. 120 KB por arquivo; ex.: foto compacta de documento, receita, TXT/PDF pequeno)</small>
             <ul class="list" id="vAtts" style="margin-top:8px">${atts.length ? atts.map((a, idx) => `<li class="row" style="display:flex;align-items:center;gap:10px"><span><b>${esc(a.name)}</b><small>${Math.max(1, Math.round((a.size || 0) / 1024))} KB</small></span><button class="btn plain" type="button" data-dl="${idx}" style="margin-left:auto">Baixar</button><button class="btn plain" type="button" data-rmatt="${idx}">Remover</button></li>`).join('') : '<li class="muted small">Nenhum anexo adicionado.</li>'}</ul>
             <p style="margin-top:8px"><input type="file" id="vFile"></p>
           </div>
@@ -1223,7 +1236,16 @@ async function vaultPage() {
             <span class="small muted">Atalho: ${MAC ? '⌘S' : 'Ctrl+S'}</span>
             <button class="btn plain" id="vDel" type="button" style="margin-left:auto;color:var(--stop)">Excluir cofre</button>
           </div>
-        </div>`;
+        </div>
+        <details class="more" id="vChPwBox">
+          <summary>Alterar senha deste cofre</summary>
+          <form id="vChPwForm" class="body" style="display:grid;gap:10px;max-width:460px">
+            <div class="ctl-field"><label for="vNewPw1">Nova senha (mínimo 4 caracteres)</label>${pwField('id="vNewPw1" required minlength="4"', 'Digite a nova senha')}</div>
+            <div class="ctl-field"><label for="vNewPw2">Confirmar nova senha</label>${pwField('id="vNewPw2" required minlength="4"', 'Repita a nova senha')}</div>
+            <div><button class="btn plain" type="submit">Atualizar senha do cofre</button></div>
+          </form>
+        </details>`;
+      wirePwEyes(main);
       const markDirty = () => { dirty = true; const b = $('#vDirty'); if (b) b.hidden = false };
       $$('[data-sec]', main).forEach(ta => ta.addEventListener('input', markDirty));
       $('#vLock').onclick = () => {
@@ -1232,7 +1254,10 @@ async function vaultPage() {
       };
       $('#vFile').onchange = ev => {
         const f = ev.target.files && ev.target.files[0]; if (!f) return;
+        if (atts.length >= 20) { syncSections(); draw('Limite de 20 anexos por cofre atingido.', '', dirty); return }
         if (f.size > 120 * 1024) { syncSections(); draw('Arquivo maior que 120 KB para manter o cofre leve.', '', dirty); return }
+        const totalAttBytes = atts.reduce((acc, a) => acc + (a.size || 0), 0) + f.size;
+        if (totalAttBytes > 2 * 1024 * 1024) { syncSections(); draw('O total de anexos ultrapassaria 2 MB. Remova algum anexo antigo antes.', '', dirty); return }
         const rd = new FileReader();
         rd.onload = () => {
           syncSections();
@@ -1244,14 +1269,30 @@ async function vaultPage() {
       };
       $$('[data-dl]', main).forEach(b => b.onclick = () => {
         const a = atts[+b.dataset.dl]; if (!a) return;
-        const bin = Uint8Array.from(atob(a.data_b64), c => c.charCodeAt(0));
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([bin], { type: a.mime || 'application/octet-stream' }));
-        link.download = a.name; document.body.append(link); link.click();
-        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove() }, 500);
+        try {
+          const bin = Uint8Array.from(atob(a.data_b64), c => c.charCodeAt(0));
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(new Blob([bin], { type: a.mime || 'application/octet-stream' }));
+          link.download = a.name; document.body.append(link); link.click();
+          setTimeout(() => { URL.revokeObjectURL(link.href); link.remove() }, 500);
+        } catch {
+          toast('Não foi possível decodificar este anexo.');
+        }
       });
       $$('[data-rmatt]', main).forEach(b => b.onclick = () => { syncSections(); p.attachments.splice(+b.dataset.rmatt, 1); draw('', 'Anexo removido — clique em Salvar alterações.', true) });
       $('#vSave').onclick = saveCurrent;
+      $('#vChPwForm').onsubmit = async ev => {
+        ev.preventDefault();
+        const p1 = $('#vNewPw1').value, p2 = $('#vNewPw2').value;
+        if (p1.length < 4) { syncSections(); draw('A nova senha deve ter pelo menos 4 caracteres.', '', dirty); return }
+        if (p1 !== p2) { syncSections(); draw('As novas senhas não coincidem.', '', dirty); return }
+        try {
+          syncSections();
+          await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'change_password', id: opened.id, password: opened.password, new_password: p1 }) });
+          opened.password = p1;
+          draw('', 'Senha do cofre atualizada com sucesso.', dirty);
+        } catch (e) { syncSections(); draw(e.message, '', dirty) }
+      };
       $('#vDel').onclick = async () => {
         if (!confirm(`Excluir permanentemente o cofre “${opened.name}”? Não há como desfazer.`)) return;
         try {
@@ -1265,16 +1306,17 @@ async function vaultPage() {
     main.innerHTML = `<h1>Cofre criptografado de emergência</h1>
       <p class="lead">Guarde documentos, ficha médica, telefones da família e senhas cifrados localmente com senha forte (PBKDF2 + HMAC-SHA256) dentro da biblioteca.</p>
       ${err ? `<div class="err">${esc(err)}</div>` : msg ? `<div class="notice">${esc(msg)}</div>` : ''}
-      ${list.length ? `${secHead('Cofres neste dispositivo')}<div class="cards2">${list.map(v => `<div class="card" style="display:grid;gap:8px"><b>${esc(v.name)}</b><small>Atualizado em ${esc(v.updated.slice(0, 16).replace('T', ' '))} · ${(v.bytes / 1024).toFixed(1)} KB</small><div style="display:flex;gap:8px;align-items:center">${pwField(`data-pw="${esc(v.id)}"`, 'Senha do cofre')}<button class="btn" type="button" data-open="${esc(v.id)}">Abrir</button></div></div>`).join('')}</div>` : ''}
+      ${list.length ? `${secHead('Cofres neste dispositivo')}<div class="cards2">${list.map(v => `<div class="card" style="display:grid;gap:8px"><b>${esc(v.name)}</b><small>Atualizado em ${esc((v.updated || '').slice(0, 16).replace('T', ' '))} · ${(v.bytes / 1024).toFixed(1)} KB</small><div style="display:flex;gap:8px;align-items:center">${pwField(`data-pw="${esc(v.id)}"`, 'Senha do cofre')}<button class="btn" type="button" data-open="${esc(v.id)}">Abrir</button></div></div>`).join('')}</div>` : ''}
       ${secHead('Criar novo cofre')}
       <form id="vNew" class="tool-card" style="max-width:520px">
         <div class="ctl-field"><label for="vName">Nome do cofre</label><input id="vName" class="ctl-input" required placeholder="ex.: Documentos da Família"></div>
         <div class="ctl-field"><label for="vPass">Senha (mínimo 4 caracteres — guarde bem, não há recuperação!)</label>${pwField('id="vPass" required minlength="4"', 'Escolha uma senha forte')}</div>
+        <div class="ctl-field"><label for="vPass2">Confirmar senha</label>${pwField('id="vPass2" required minlength="4"', 'Repita a senha')}</div>
         <button class="btn" type="submit">${ico('vault')}<span>Criar cofre criptografado</span></button>
       </form>`;
     wirePwEyes(main);
     const tryOpen = async id => {
-      const pw = ($(`[data-pw="${id}"]`, main) || {}).value || '';
+      const pw = ($(`[data-pw="${CSS.escape(id)}"]`, main) || {}).value || '';
       if (!pw) { draw('Digite a senha para abrir o cofre.'); return }
       try {
         const r = await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open', id, password: pw }) });
@@ -1286,7 +1328,8 @@ async function vaultPage() {
     $$('[data-pw]', main).forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryOpen(inp.dataset.pw) } }));
     $('#vNew').onsubmit = async e => {
       e.preventDefault();
-      const name = $('#vName').value.trim(), pw = $('#vPass').value;
+      const name = $('#vName').value.trim(), pw = $('#vPass').value, pw2 = $('#vPass2').value;
+      if (pw !== pw2) { draw('As senhas digitadas não coincidem.'); return }
       try {
         const r = await api('/api/vault', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', name, password: pw }) });
         opened = { id: r.id, name: r.name, password: pw, payload: r.payload };
@@ -1363,7 +1406,7 @@ function localAbout(st) {
   return line ? `IA local: ${esc(l.name)}, ${line}.${where ? ` Usa ${where}.` : ''} Lê apenas texto.
       <span class="row">${l.state === 'ready' ? btn('stop', 'Parar agora') : ''}${btn('off', 'Desligar')}</span>`
     : l.state === 'off' ? `A IA local está desligada. ${btn('on', 'Ligar')}`
-    : `IA local: ${esc(l.message || { absent: 'não adicionada. Adicione em Biblioteca e IA local (cerca de 17 GB).', checking: 'verificando o arquivo…', measuring: 'verificando a memória deste computador…' }[l.state] || l.state)} ${l.state === 'absent' ? '<a class="btn plain" href="/ui/setup.html#manage">Adicionar IA local</a>' : ''}${btn('rescan', 'Verificar novamente')}`;
+    : `IA local: ${esc(l.message || { absent: 'não adicionada. Adicione em Biblioteca e IA local (modelos de ~508 MB a 17 GB).', checking: 'verificando o arquivo…', measuring: 'verificando a memória deste computador…' }[l.state] || l.state)} ${l.state === 'absent' ? '<a class="btn plain" href="/ui/setup.html#manage">Adicionar IA local</a>' : ''}${btn('rescan', 'Verificar novamente')}`;
 }
 async function localAI(action) {
   try { await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) }) } catch { }

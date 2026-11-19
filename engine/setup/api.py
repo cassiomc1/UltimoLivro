@@ -8,6 +8,7 @@ Two ways in, one module:
 
 Only requests from this computer get an answer (the bridge's, or loopback): a phone the guide is shared with gets 403.
 """
+import gc
 import hashlib
 import json
 import os
@@ -788,6 +789,14 @@ class Setup:
                 if self.mode == 'manage':
                     return self.start(None, True, None, {name: str(p)}, explicit=True, model_id=m['id'])
                 return self.public_job() or {'job': None, 'noted': True, 'model': m['id']}
+        z = kiwix_br.get_zim(name)
+        if z:
+            if p.stat().st_size != z['size']:
+                return {'error': f'Esse arquivo tem {_gb(p.stat().st_size)}, e não os {_gb(z["size"])} esperados para {z["title"]}.', 'code': 'size'}
+            self.sources[name] = str(p)
+            if self.mode == 'manage':
+                return self.start(sources={name: str(p)}, explicit=True, zim_id=z['id'])
+            return self.public_job() or {'job': None, 'noted': True, 'zim': z['id']}
         return {'error': 'That is not a file Lastbook knows. Choose a Lastbook library zip or the model file.', 'code': 'unknown'}
 
     def finish(self):
@@ -848,6 +857,14 @@ class Setup:
             threading.Thread(target=local.discover, daemon=True).start()
         return {'ok': True, 'freed_bytes': freed}
 
+    def _evict_zim_cache(self, name):
+        lib = sys.modules.get('engine.library')
+        if lib and hasattr(lib, 'ZIMS') and hasattr(lib, 'ZIM_LOCK'):
+            with lib.ZIM_LOCK:
+                lib.ZIMS.pop(name, None)
+            if os.name == 'nt':
+                gc.collect()
+
     def remove_zim(self, zim_id):
         if self.mode != 'manage' or not self.current or not zim_id:
             return {'error': 'Nenhuma enciclopédia selecionada para remover.', 'code': 'nothing'}
@@ -861,6 +878,7 @@ class Setup:
         p = kiwix_br.collections_dir(self.current) / name
         if not p.is_file():
             return {'error': 'Essa enciclopédia não está instalada neste computador.', 'code': 'nothing'}
+        self._evict_zim_cache(name)
         size = p.stat().st_size
         try:
             p.unlink()
@@ -1177,12 +1195,14 @@ class Setup:
         dest = kiwix_br.collections_dir(lib) / z['file']
         dest.parent.mkdir(parents=True, exist_ok=True)
         self._set(it, 'activating')
+        self._evict_zim_cache(z['file'])
         if ours or _same_disk(path, dest):
             os.replace(path, dest)
         else:
             tmp = dest.with_name(dest.name + '.partial')
             shutil.copyfile(path, tmp)
             os.replace(tmp, dest)
+        self._evict_zim_cache(z['file'])
 
     def _mark_checked(self, path, sha256):
         llm = self.llm()

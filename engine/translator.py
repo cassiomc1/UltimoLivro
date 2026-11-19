@@ -56,44 +56,44 @@ GLOSSARY = [
 ]
 
 _TERM_MAP = [
-    (r'\bwarning\b', 'AVISO'),
-    (r'\bcaution\b', 'ATENÇÃO'),
-    (r'\bdanger\b', 'PERIGO'),
-    (r'\bnote\b', 'NOTA'),
-    (r'\bcarbon monoxide\b', 'monóxido de carbono'),
-    (r'\bgenerator\b', 'gerador'),
-    (r'\bdrinking water\b', 'água potável'),
-    (r'\bboil water\b', 'ferver a água'),
-    (r'\bbleach\b', 'água sanitária / hipoclorito'),
-    (r'\bfilter\b', 'filtro'),
-    (r'\bfirst aid\b', 'primeiros socorros'),
-    (r'\bbleeding\b', 'sangramento / hemorragia'),
-    (r'\bburns?\b', 'queimadura(s)'),
-    (r'\btourniquet\b', 'torniquete'),
-    (r'\bhypothermia\b', 'hipotermia'),
-    (r'\bheat stroke\b', 'intermação / insolação'),
-    (r'\bbandage\b', 'curativo / atadura'),
-    (r'\bsterile\b', 'estéril'),
-    (r'\binfection\b', 'infecção'),
-    (r'\bfever\b', 'febre'),
-    (r'\bdehydration\b', 'desidratação'),
-    (r'\bcircuit breaker\b', 'disjuntor'),
-    (r'\boutdoors\b', 'ao ar livre'),
-    (r'\bwind\b', 'vento'),
-    (r'\bshelter\b', 'abrigo'),
-    (r'\bfood safety\b', 'segurança dos alimentos'),
-    (r'\brefrigerator\b', 'geladeira'),
-    (r'\boil\b', 'óleo'),
-    (r'\bfuel\b', 'combustível'),
-    (r'\bspark plug\b', 'vela de ignição'),
-    (r'\bbattery\b', 'bateria'),
-    (r'\bsolar panel\b', 'painel solar'),
-    (r'\badvertencia\b', 'AVISO'),
-    (r'\bpeligro\b', 'PERIGO'),
-    (r'\bprecauci[óo]n\b', 'ATENÇÃO'),
-    (r'\bagua potable\b', 'água potável'),
-    (r'\bprimeros auxilios\b', 'primeiros socorros'),
-    (r'\bhemorragia\b', 'hemorragia'),
+    (r'\bwarning\b', 'warning', 'AVISO'),
+    (r'\bcaution\b', 'caution', 'ATENÇÃO'),
+    (r'\bdanger\b', 'danger', 'PERIGO'),
+    (r'\bnote\b', 'note', 'NOTA'),
+    (r'\bcarbon monoxide\b', 'carbon monoxide', 'monóxido de carbono'),
+    (r'\bgenerator\b', 'generator', 'gerador'),
+    (r'\bdrinking water\b', 'drinking water', 'água potável'),
+    (r'\bboil water\b', 'boil water', 'ferver a água'),
+    (r'\bbleach\b', 'bleach', 'água sanitária / hipoclorito'),
+    (r'\bfilter\b', 'filter', 'filtro'),
+    (r'\bfirst aid\b', 'first aid', 'primeiros socorros'),
+    (r'\bbleeding\b', 'bleeding', 'sangramento / hemorragia'),
+    (r'\bburns?\b', 'burn(s)', 'queimadura(s)'),
+    (r'\btourniquet\b', 'tourniquet', 'torniquete'),
+    (r'\bhypothermia\b', 'hypothermia', 'hipotermia'),
+    (r'\bheat stroke\b', 'heat stroke', 'intermação / insolação'),
+    (r'\bbandage\b', 'bandage', 'curativo / atadura'),
+    (r'\bsterile\b', 'sterile', 'estéril'),
+    (r'\binfection\b', 'infection', 'infecção'),
+    (r'\bfever\b', 'fever', 'febre'),
+    (r'\bdehydration\b', 'dehydration', 'desidratação'),
+    (r'\bcircuit breaker\b', 'circuit breaker', 'disjuntor'),
+    (r'\boutdoors\b', 'outdoors', 'ao ar livre'),
+    (r'\bwind\b', 'wind', 'vento'),
+    (r'\bshelter\b', 'shelter', 'abrigo'),
+    (r'\bfood safety\b', 'food safety', 'segurança dos alimentos'),
+    (r'\brefrigerator\b', 'refrigerator', 'geladeira'),
+    (r'\boil\b', 'oil', 'óleo'),
+    (r'\bfuel\b', 'fuel', 'combustível'),
+    (r'\bspark plug\b', 'spark plug', 'vela de ignição'),
+    (r'\bbattery\b', 'battery', 'bateria'),
+    (r'\bsolar panel\b', 'solar panel', 'painel solar'),
+    (r'\badvertencia\b', 'advertencia', 'AVISO'),
+    (r'\bpeligro\b', 'peligro', 'PERIGO'),
+    (r'\bprecauci[óo]n\b', 'precaución', 'ATENÇÃO'),
+    (r'\bagua potable\b', 'agua potable', 'água potável'),
+    (r'\bprimeros auxilios\b', 'primeros auxilios', 'primeiros socorros'),
+    (r'\bhemorragia\b', 'hemorragia', 'hemorragia'),
 ]
 
 
@@ -102,14 +102,21 @@ def _cache_dir(data_dir=None):
     return base / 'derived' / 'translations'
 
 
+def _safe_token(value, default, max_len=40):
+    cleaned = re.sub(r'[^A-Za-z0-9_-]+', '_', str(value or '')).strip('_')[:max_len]
+    return cleaned or default
+
+
 def _cache_path(text, source, target, doc_id=None, page=None, data_dir=None):
     h = hashlib.sha256(f'{source}|{target}|{text}'.encode('utf-8')).hexdigest()[:24]
+    safe_target = _safe_token(target, 'pt-BR', 20)
     if doc_id:
-        safe_id = re.sub(r'[^A-Za-z0-9._-]+', '_', str(doc_id))[:60]
-        p = f'p{page}' if page else 'all'
-        name = f'{safe_id}_{p}_{target}_{h}.json'
+        safe_id = _safe_token(doc_id, 'doc', 60)
+        safe_page = _safe_token(page, '', 16)
+        p = f'p{safe_page}' if safe_page else 'all'
+        name = f'{safe_id}_{p}_{safe_target}_{h}.json'
     else:
-        name = f'txt_{target}_{h}.json'
+        name = f'txt_{safe_target}_{h}.json'
     return _cache_dir(data_dir) / name
 
 
@@ -149,19 +156,36 @@ def _target_label(target):
     return target
 
 
-def _glossary_fallback(text):
+_GLOSSARY_STOP = {
+    'with', 'from', 'that', 'this', 'only', 'have', 'need', 'your', 'about', 'into',
+    'para', 'como', 'mais', 'pelo', 'pela', 'sempre', 'sobre', 'agua', 'água', 'limpa',
+    'sobre', 'entre', 'menos', 'usar', 'para', 'solo', 'hacia', 'desde', 'esta', 'este',
+}
+
+
+def _target_lang_key(target):
+    t = (target or 'pt-BR').lower()
+    if t.startswith('en'):
+        return 'en'
+    if t.startswith('es'):
+        return 'es'
+    return 'pt'
+
+
+def _glossary_fallback(text, target='pt-BR'):
     hits = []
     low = text.lower()
-    for pat, pt in _TERM_MAP:
+    for pat, label, pt in _TERM_MAP:
         if re.search(pat, low, re.I):
-            hits.append((pat.strip(r'\b').replace('?', ''), pt))
+            hits.append((label, pt))
     matched_phrases = []
     for cat in GLOSSARY:
         for it in cat['items']:
-            words = [w for w in re.findall(r'[a-zà-ÿ]{4,}', it['en'].lower()) if w not in ('with', 'from', 'that', 'this', 'only', 'have', 'need')]
+            pool = f"{it['en']} {it['es']} {it['pt']}".lower()
+            words = set(w for w in re.findall(r'[a-zà-ÿ]{4,}', pool) if w not in _GLOSSARY_STOP)
             if sum(1 for w in words if w in low) >= 2:
                 matched_phrases.append(it)
-    return hits, matched_phrases
+    return hits, matched_phrases, _target_lang_key(target)
 
 
 def translate(text, source='auto', target='pt-BR', doc_id=None, page=None, data_dir=None):
@@ -171,19 +195,20 @@ def translate(text, source='auto', target='pt-BR', doc_id=None, page=None, data_
     raw = raw[:12_000]
     source = str(source or 'auto')[:20]
     target = str(target or 'pt-BR')[:20]
+    t0 = time.time()
     cpath = _cache_path(raw, source, target, doc_id, page, data_dir)
     if cpath.is_file():
         try:
             cached = json.loads(cpath.read_text(encoding='utf-8'))
             if cached.get('translated') and cached.get('mode') == 'ai':
                 cached['cached'] = True
+                cached['elapsed_s'] = round(time.time() - t0, 2)
                 return cached
         except (OSError, ValueError):
             pass
 
     import assistant
     import llm_local
-    t0 = time.time()
     use_local = assistant.local_on()
     st = None if use_local else assistant.model_status()
     use_http = bool(st and st.get('online') and not st.get('local'))
@@ -195,9 +220,10 @@ def translate(text, source='auto', target='pt-BR', doc_id=None, page=None, data_
                 use_local = False
         if use_local or use_http:
             tgt_label = _target_label(target)
+            src_hint = '' if source == 'auto' else f' de {_target_label(source)}'
             sys_msg = (
                 f'Você é um tradutor técnico preciso e fiel para situações de emergência. '
-                f'Traduza o texto a seguir para {tgt_label}. '
+                f'Traduza o texto a seguir{src_hint} para {tgt_label}. '
                 f'Regras obrigatórias: mantenha exatamente os números, medidas, dosagens, horários, avisos de segurança e a formatação simples. '
                 f'NÃO escreva comentários, explicações nem pensamento prévio — devolva SOMENTE a tradução direta.'
             )
@@ -205,14 +231,15 @@ def translate(text, source='auto', target='pt-BR', doc_id=None, page=None, data_
             for ch in _chunks(raw):
                 msgs = [
                     {'role': 'system', 'content': sys_msg},
-                    {'role': 'user', 'content': f'Traduza para {tgt_label}:\n\n{ch}'},
+                    {'role': 'user', 'content': f'Traduza{src_hint} para {tgt_label}:\n\n{ch}'},
                 ]
                 if use_local:
                     got = assistant._local_round(msgs, None, lambda: False, lambda _: None, lambda _: None)
                 else:
                     got = assistant._http_round(msgs, None, lambda: False, lambda _: None, lambda _: None)
-                if isinstance(got, tuple) and got[0].strip():
-                    pieces.append(llm_local._strip_thinking(got[0]))
+                cleaned = llm_local._strip_thinking(got[0]).strip() if isinstance(got, tuple) else ''
+                if cleaned:
+                    pieces.append(cleaned)
                 else:
                     pieces = []
                     break
@@ -227,32 +254,35 @@ def translate(text, source='auto', target='pt-BR', doc_id=None, page=None, data_
                     'cached': False,
                     'elapsed_s': round(time.time() - t0, 2),
                 }
+                tmp = cpath.with_name(f'.{cpath.name}.{os.getpid()}.{time.time_ns()}.tmp')
                 try:
                     cpath.parent.mkdir(parents=True, exist_ok=True)
-                    tmp = cpath.with_suffix('.tmp')
                     tmp.write_text(json.dumps(res, ensure_ascii=False), encoding='utf-8')
                     os.replace(tmp, cpath)
                 except OSError:
-                    pass
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 return res
 
-    # Fallback sem IA instalada: glossário técnico e frases de emergência correspondentes.
-    term_hits, phrase_hits = _glossary_fallback(raw)
-    lines = ['**Modo Glossário Offline (nenhum modelo de IA local instalado ou ativo no momento)**', '']
+    # Fallback sem IA instalada: glossário técnico e frases de emergência correspondentes em texto limpo.
+    term_hits, phrase_hits, lang_key = _glossary_fallback(raw, target=target)
+    lines = ['Modo Glossário Offline (nenhum modelo de IA local instalado ou ativo no momento)', '']
     if term_hits:
-        lines.append('**Termos-chave identificados no texto:**')
+        lines.append('Termos-chave identificados no texto:')
         for orig, pt in term_hits:
-            lines.append(f'- `{orig}` → **{pt}**')
+            lines.append(f'- {orig} -> {pt}')
         lines.append('')
     if phrase_hits:
-        lines.append('**Instruções relacionadas do guia de emergência:**')
+        lines.append('Instruções relacionadas do guia de emergência:')
         for ph in phrase_hits[:6]:
-            lines.append(f'- {ph["pt"]}')
+            lines.append(f'- {ph[lang_key]}')
         lines.append('')
     if not term_hits and not phrase_hits:
         lines.append('Nenhum termo específico do glossário rápido foi identificado neste trecho.')
         lines.append('')
-    lines.append('Para tradução neural completa de qualquer página ou texto offline, instale um modelo de IA local (ex.: Qwen 3.5 0.8B ou Gemma 4 E2B) em **Biblioteca e IA local**.')
+    lines.append('Para tradução neural completa de qualquer página ou texto offline, instale um modelo de IA local (ex.: Qwen 3.5 0.8B ou Gemma 4 E2B) em Biblioteca e IA local.')
     return {
         'translated': '\n'.join(lines),
         'mode': 'glossary',

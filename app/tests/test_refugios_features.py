@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import socket
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -34,8 +35,8 @@ try:
     import llm_local  # noqa: E402
     import server  # noqa: E402
     import bridge as B  # noqa: E402
-    from engine import checker, kiwix_br, translator, vault  # noqa: E402
-    from engine.setup import api as setup_api  # noqa: E402
+    from engine import checker, kiwix_br, library as eng_lib, osm_br, translator, vault  # noqa: E402
+    from engine.setup import api as setup_api, install as setup_install  # noqa: E402
 finally:
     socket.socket.listen = _real_listen
 
@@ -143,6 +144,29 @@ class VaultTests(unittest.TestCase):
         self.assertTrue(deleted['ok'])
         self.assertEqual(vault.list_vaults(data_dir=self.tmp), [])
 
+    def test_slug_change_password_and_corrupted_vault(self):
+        self.assertTrue(vault._slug('Família São José').startswith('familia-sao-jose-'))
+
+        created = vault.create_vault('Família São José', 'antiga-123', data_dir=self.tmp)
+        vid = created['id']
+        vault.save_vault(vid, 'antiga-123', {'sections': {'medical': 'Alergia a dipirona'}}, data_dir=self.tmp)
+
+        changed = vault.change_password(vid, 'antiga-123', 'nova-456', data_dir=self.tmp)
+        self.assertEqual(changed['payload']['sections']['medical'], 'Alergia a dipirona')
+        with self.assertRaises(PermissionError):
+            vault.open_vault(vid, 'antiga-123', data_dir=self.tmp)
+        reopened = vault.open_vault(vid, 'nova-456', data_dir=self.tmp)
+        self.assertEqual(reopened['payload']['sections']['medical'], 'Alergia a dipirona')
+
+        vpath = vault._vault_path(vid, data_dir=self.tmp)
+        vpath.write_text('{corrompido', encoding='utf-8')
+        with self.assertRaises(ValueError):
+            vault.open_vault(vid, 'nova-456', data_dir=self.tmp)
+
+        vpath.write_text(json.dumps({'v': 1, 'salt': 'bad!', 'nonce': 'AA==', 'mac': 'AA==', 'data': 'AA=='}), encoding='utf-8')
+        with self.assertRaises(ValueError):
+            vault.open_vault(vid, 'nova-456', data_dir=self.tmp)
+
 
 class TranslatorTests(unittest.TestCase):
     def setUp(self):
@@ -185,6 +209,42 @@ class TranslatorTests(unittest.TestCase):
         self.assertEqual(res['mode'], 'ai')
         self.assertEqual(res['translated'], 'Mantenha água limpa em recipientes fechados.')
 
+    def test_glossary_term_labels_english_target_and_safe_cache_path(self):
+        cpath = translator._cache_path('test', 'en', '../../evil', doc_id='../doc', page='../x', data_dir=self.tmp)
+        self.assertEqual(cpath.parent.resolve(), (self.tmp / 'derived' / 'translations').resolve())
+        self.assertNotIn('..', cpath.name)
+
+        import assistant
+        with mock.patch.object(assistant, 'local_on', return_value=False), \
+                mock.patch.object(assistant, 'model_status', return_value={'online': False, 'local': False}):
+            res = translator.translate(
+                'Bleach, bleeding, burns and boil water.',
+                source='en',
+                target='pt-BR',
+                data_dir=self.tmp,
+            )
+            self.assertIn('bleach ->', res['translated'])
+            self.assertIn('bleeding ->', res['translated'])
+            self.assertIn('burn(s) ->', res['translated'])
+            self.assertIn('boil water ->', res['translated'])
+            self.assertNotIn('**', res['translated'])
+
+            res_en = translator.translate(
+                'Ferva a água por pelo menos 1 minuto e aplique pressão direta no sangramento.',
+                source='pt-BR',
+                target='en',
+                data_dir=self.tmp,
+            )
+            self.assertIn('Bring water to a rolling boil', res_en['translated'])
+
+        with mock.patch.object(assistant, 'local_on', return_value=True), \
+                mock.patch.object(assistant, 'LOCAL') as mloc, \
+                mock.patch.object(assistant, '_local_round', return_value=('<think>apenas pensamento</think>', {})):
+            mloc.ensure_running.return_value = None
+            res_empty = translator.translate('Carbon monoxide generator outdoors', source='en', target='pt-BR', data_dir=self.tmp)
+            self.assertEqual(res_empty['mode'], 'glossary')
+            self.assertFalse(list((self.tmp / 'derived' / 'translations').glob('*.json')))
+
 
 class CheckerTests(unittest.TestCase):
     def setUp(self):
@@ -211,6 +271,43 @@ class CheckerTests(unittest.TestCase):
             txt = report.read_text(encoding='utf-8')
             self.assertIn('RELATÓRIO DE VERIFICAÇÃO DO ÚLTIMO LIVRO', txt)
             self.assertIn('Biblioteca Base', txt)
+
+    def test_state_map_manifest_filter_and_corrupt_vault_detection(self):
+        map_db = self.tmp / 'derived' / 'geo' / 'map.sqlite'
+        map_db.unlink()
+        con = sqlite3.connect(map_db)
+        con.execute('CREATE TABLE poi(id INTEGER PRIMARY KEY, cls TEXT, name TEXT, lon REAL, lat REAL)')
+        con.execute('INSERT INTO poi VALUES (1, "hospital", "Hospital Central", -46.63, -23.55)')
+        con.execute('CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)')
+        con.executemany('INSERT INTO meta VALUES (?, ?)', [('state', 'SP'), ('built', '2026-11-18T12:00:00')])
+        con.commit()
+        con.close()
+
+        (self.tmp / 'map-set.json').write_text(json.dumps({
+            'name': 'SP',
+            'files': {'derived/geo/map.sqlite': map_db.stat().st_size},
+        }), encoding='utf-8')
+        # pack-manifest.tsv tem tamanho antigo de map.sqlite, mas map-set.json substituiu o conjunto de mapa.
+        (self.tmp / 'pack-manifest.tsv').write_text(
+            'path\tsize\tsha256\n'
+            f'library-data/catalog.json\t{(self.tmp / "library-data" / "catalog.json").stat().st_size}\t{checker._sha256_file(self.tmp / "library-data" / "catalog.json")}\n'
+            'derived/geo/map.sqlite\t99999999\t0000\n',
+            encoding='utf-8',
+        )
+        vdir = self.tmp / 'derived' / 'vault'
+        vdir.mkdir(parents=True)
+        (vdir / 'quebrado.lbvault').write_text(json.dumps({'v': 1, 'salt': '###', 'nonce': 'AA==', 'mac': 'AA==', 'data': 'AA=='}), encoding='utf-8')
+
+        res = checker.run_check(full=False, data_dir=self.tmp)
+        self.assertFalse(res['ok'])
+        lib_items = {it['label']: it for it in res['sections'][0]['items']}
+        self.assertEqual(lib_items['Manifesto da biblioteca']['status'], 'ok')
+        map_items = {it['label']: it for it in res['sections'][1]['items']}
+        self.assertEqual(map_items['Mapa estadual OpenStreetMap']['status'], 'ok')
+        self.assertIn('São Paulo (SP)', map_items['Mapa estadual OpenStreetMap']['detail'])
+        self.assertIn('1 pontos de apoio', map_items['Mapa estadual OpenStreetMap']['detail'])
+        vault_items = [it for it in res['sections'][4]['items'] if 'quebrado' in it['label'].lower()]
+        self.assertEqual(vault_items[0]['status'], 'error')
 
 
 class KiwixAndLLMTests(unittest.TestCase):
@@ -328,6 +425,130 @@ class RoutesIntegrationTests(unittest.TestCase):
         st, mres = _bridge_call(self.bridge, 'POST', '/api/assistant/local', {'action': 'select', 'model_id': 'nao-existe'})
         self.assertEqual(st, 404)
         self.assertIn('error', mres)
+
+    def test_large_vault_payload_and_change_password_through_bridge(self):
+        st, created = _bridge_call(self.bridge, 'POST', '/api/vault', {'action': 'create', 'name': 'Anexos Grandes', 'password': 'abcd'})
+        self.assertEqual(st, 200)
+        vid = created['id']
+        self.addCleanup(lambda: (DATA / 'derived' / 'vault' / f'{vid}.lbvault').unlink(missing_ok=True))
+
+        # 3 anexos em base64 (~360 KB) ultrapassam MAX_POST (256 KB), mas passam dentro de MAX_VAULT_POST (4 MB).
+        raw_blob = b'A' * (90 * 1024)
+        atts = [
+            {'id': f'att-{i}', 'name': f'doc{i}.bin', 'mime': 'application/octet-stream', 'size': len(raw_blob), 'data_b64': base64.b64encode(raw_blob).decode('ascii')}
+            for i in range(3)
+        ]
+        st, saved = _bridge_call(self.bridge, 'POST', '/api/vault', {
+            'action': 'save', 'id': vid, 'password': 'abcd',
+            'payload': {'sections': {'documents': 'OK'}, 'attachments': atts},
+        })
+        self.assertEqual(st, 200)
+        self.assertEqual(len(saved['payload']['attachments']), 3)
+
+        # /api/chat continua limitado a MAX_POST (256 KB).
+        st_chat, _ = _bridge_call(self.bridge, 'POST', '/api/chat', {'messages': [{'role': 'user', 'content': 'x' * (B.MAX_POST + 1024)}]})
+        self.assertEqual(st_chat, 413)
+
+        # Troca de senha via rota /api/vault e detecção de arquivo corrompido (400).
+        st, ch = _bridge_call(self.bridge, 'POST', '/api/vault', {'action': 'change_password', 'id': vid, 'password': 'abcd', 'new_password': 'nova'})
+        self.assertEqual(st, 200)
+        self.assertEqual(ch['payload']['sections']['documents'], 'OK')
+
+        st, bad_open = _bridge_call(self.bridge, 'POST', '/api/vault', {'action': 'open', 'id': vid, 'password': 'abcd'})
+        self.assertEqual(st, 403)
+        self.assertIn('error', bad_open)
+
+        (DATA / 'derived' / 'vault' / f'{vid}.lbvault').write_text('{bad', encoding='utf-8')
+        st, corrupt = _bridge_call(self.bridge, 'POST', '/api/vault', {'action': 'open', 'id': vid, 'password': 'nova'})
+        self.assertEqual(st, 400)
+        self.assertIn('error', corrupt)
+
+
+class SetupCarryOverAndZimTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='lb-carry-'))
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+
+    def test_carry_over_preserves_vaults_zims_and_translations(self):
+        old = self.tmp / 'old'
+        new = self.tmp / 'new'
+        (old / 'derived' / 'vault').mkdir(parents=True)
+        (old / 'library-data' / 'collections').mkdir(parents=True)
+        (old / 'derived' / 'translations').mkdir(parents=True)
+        (new / 'library-data' / 'collections').mkdir(parents=True)
+
+        (old / 'derived' / 'vault' / 'fam.lbvault').write_text('{"v":1}', encoding='utf-8')
+        (old / 'library-data' / 'collections' / 'wikimed.zim').write_bytes(b'ZIM1')
+        (old / 'library-data' / 'collections' / 'existing.zim').write_bytes(b'OLD')
+        (new / 'library-data' / 'collections' / 'existing.zim').write_bytes(b'NEW')
+        (old / 'derived' / 'translations' / 't1.json').write_text('{"translated":"oi"}', encoding='utf-8')
+
+        setup_install.carry_over(old, new)
+        self.assertTrue((new / 'derived' / 'vault' / 'fam.lbvault').is_file())
+        self.assertTrue((old / 'derived' / 'vault' / 'fam.lbvault').is_file())
+        self.assertEqual((new / 'library-data' / 'collections' / 'wikimed.zim').read_bytes(), b'ZIM1')
+        self.assertEqual((new / 'library-data' / 'collections' / 'existing.zim').read_bytes(), b'NEW')
+        self.assertTrue((new / 'derived' / 'translations' / 't1.json').is_file())
+
+    def test_remove_zim_evicts_cache_and_use_accepts_or_rejects_zim(self):
+        lib = self.tmp / 'LastbookData'
+        cdir = kiwix_br.collections_dir(lib)
+        cdir.mkdir(parents=True)
+        (lib / 'library-data' / 'catalog.json').write_text('[]', encoding='utf-8')
+        spec = kiwix_br.get_zim('phet-pt')
+        zpath = cdir / spec['file']
+        zpath.write_bytes(b'fake-zim')
+
+        with eng_lib.ZIM_LOCK:
+            eng_lib.ZIMS[spec['file']] = object()
+
+        cfg = self.tmp / 'cfg'
+        setup_obj = setup_api.Setup('manage', cfg, self.tmp, current=lib, llm_local=False)
+        res = setup_obj.remove_zim('phet-pt')
+        self.assertTrue(res['ok'])
+        self.assertFalse(zpath.exists())
+        self.assertNotIn(spec['file'], eng_lib.ZIMS)
+
+        # Arquivo ZIM com tamanho errado deve retornar code='size'
+        dl_dir = self.tmp / 'downloads'
+        dl_dir.mkdir()
+        bad_zim = dl_dir / spec['file']
+        bad_zim.write_bytes(b'short')
+        r_bad = setup_obj.use(str(bad_zim))
+        self.assertEqual(r_bad.get('code'), 'size')
+
+        # Arquivo ZIM com tamanho exato deve ser reconhecido (inicia job ou registra source)
+        os.truncate(bad_zim, spec['size'])
+        with mock.patch.object(setup_obj, 'start', return_value={'id': 'job1', 'state': 'waiting'}) as m_start:
+            r_ok = setup_obj.use(str(bad_zim))
+            self.assertEqual(r_ok.get('id'), 'job1')
+            m_start.assert_called_once()
+            self.assertEqual(m_start.call_args.kwargs.get('zim_id'), 'phet-pt')
+
+
+class OsmBrTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='lb-osm-'))
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+
+    def test_search_places_cache_separates_near_cells(self):
+        calls = []
+
+        def fake_fetch(url, timeout=12, context=None):
+            calls.append(url)
+            if '-48.130' in url:
+                return [{'lat': '-23.55', 'lon': '-46.63', 'name': 'Hospital SP', 'class': 'amenity', 'type': 'hospital', 'address': {'city': 'São Paulo'}}]
+            return [{'lat': '-22.90', 'lon': '-43.17', 'name': 'Hospital RJ', 'class': 'amenity', 'type': 'hospital', 'address': {'city': 'Rio de Janeiro'}}]
+
+        with mock.patch.object(osm_br, '_fetch_json', side_effect=fake_fetch):
+            sp = osm_br.search_places('hospital', self.tmp, near=(-23.55, -46.63))
+            rj = osm_br.search_places('hospital', self.tmp, near=(-22.90, -43.17))
+            sp_cached = osm_br.search_places('hospital', self.tmp, near=(-23.55, -46.63))
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sp[0]['name'], 'Hospital SP')
+        self.assertEqual(rj[0]['name'], 'Hospital RJ')
+        self.assertEqual(sp_cached[0]['name'], 'Hospital SP')
 
 
 if __name__ == '__main__':

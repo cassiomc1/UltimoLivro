@@ -119,25 +119,25 @@ def _footprint(pid):
     return buf[2 + 7]   # after the 16-byte uuid: ri_phys_footprint
 
 
-def _read_body(req):
+def _read_body(req, limit=B.MAX_POST):
     """A request's body, read no further than the most the bridge would take: past that it refuses by length alone."""
     data = req.HTTPBody()
     if data is not None:
-        return bytes(data) if data.length() <= B.MAX_POST else bytes(B.MAX_POST + 1)   # bytes(data) would copy all of it first
+        return bytes(data) if data.length() <= limit else bytes(limit + 1)   # bytes(data) would copy all of it first
     stream = req.HTTPBodyStream()
     if stream is None:
         return None
     out = bytearray()
     stream.open()
     try:
-        while stream.hasBytesAvailable() and len(out) <= B.MAX_POST:
+        while stream.hasBytesAvailable() and len(out) <= limit:
             n, piece = stream.read_maxLength_(None, 65536)
             if n <= 0:
                 break
             out += bytes(piece)[:n]
     finally:
         stream.close()
-    return bytes(out)
+    return bytes(out[:limit + 1])
 
 
 class _Pulse:
@@ -281,9 +281,10 @@ class SchemeHandler(Foundation.NSObject, protocols=[objc.protocolNamed('WKURLSch
             t = _Task(task, self._forget, self.pulse)
             self.live[id(task)] = t
             method = str(req.HTTPMethod() or 'GET')
+            url = str(req.URL().absoluteString())
             headers = dict(req.allHTTPHeaderFields() or {})
-            body = _read_body(req) if method == 'POST' and self.bridge.has_key(headers) else None   # with no key it is refused unread
-            t.ex = self.bridge.start(method, str(req.URL().absoluteString()), headers, body, t)
+            body = _read_body(req, B.max_post_for(url)) if method == 'POST' and self.bridge.has_key(headers) else None   # with no key it is refused unread
+            t.ex = self.bridge.start(method, url, headers, body, t)
         except Exception:
             traceback.print_exc()
 

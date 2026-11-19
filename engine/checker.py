@@ -4,14 +4,18 @@ Verifica biblioteca base, mapas estaduais, enciclopédias Kiwix (.zim), modelos 
 compatibilidade de memória RAM, cofres criptografados e espaço em disco, salvando um relatório em:
   <LASTBOOK_DATA>/derived/logs/relatorio-verificacao.txt
 """
+import base64
+import binascii
 import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import time
 from pathlib import Path
 
-from . import kiwix_br
+from . import kiwix_br, osm_br
+from .setup import install
 
 
 def _sha256_file(path):
@@ -60,20 +64,37 @@ def run_check(full=False, data_dir=None):
         add_item(sec_lib, 'Pacote instalado', 'warn', 'pack.json não encontrado ou ilegível.')
 
     manifest_tsv = data / 'pack-manifest.tsv'
+    has_map_set = bool(install.map_set(data))
     if manifest_tsv.is_file():
         try:
-            rows = [l.split('\t') for l in manifest_tsv.read_text(encoding='utf-8').splitlines()[1:] if l.strip()]
+            raw_rows = [l.split('\t') for l in manifest_tsv.read_text(encoding='utf-8').splitlines()[1:] if l.strip()]
+            rows = []
+            malformed = 0
+            for r in raw_rows:
+                if len(r) < 3:
+                    malformed += 1
+                    continue
+                if has_map_set and install.map_member(r[0]):
+                    continue
+                rows.append(r)
             missing = 0
             bad_hash = 0
             for r in rows:
-                rel, sz, digest = r[0], int(r[1]), r[2]
+                rel, sz_s, digest = r[0], r[1], r[2]
+                rel_p = Path(rel)
+                if '..' in rel_p.parts or rel_p.is_absolute():
+                    bad_hash += 1
+                    continue
+                sz = int(sz_s)
                 fp = data / rel
                 if not fp.is_file() or fp.stat().st_size != sz:
                     missing += 1
                 elif full and _sha256_file(fp) != digest:
                     bad_hash += 1
-            if missing == 0 and bad_hash == 0:
+            if missing == 0 and bad_hash == 0 and malformed == 0:
                 add_item(sec_lib, 'Manifesto da biblioteca', 'ok', f'{len(rows)} arquivos conferidos' + (' (SHA-256 verificado)' if full else ' (tamanho verificado)'))
+            elif missing == 0 and bad_hash == 0 and malformed > 0:
+                add_item(sec_lib, 'Manifesto da biblioteca', 'warn', f'{len(rows)} arquivos conferidos; {malformed} linha(s) malformada(s) no manifesto.')
             else:
                 add_item(sec_lib, 'Manifesto da biblioteca', 'error', f'{missing} ausente(s)/tamanho incorreto, {bad_hash} corrompido(s). Use "Verificar e reparar".')
         except Exception as e:
@@ -84,17 +105,57 @@ def run_check(full=False, data_dir=None):
     sec_map = {'id': 'maps', 'title': 'Mapas Offline e Busca de Endereços', 'items': []}
     geo = data / 'derived' / 'geo'
     map_db = geo / 'map.sqlite'
+    map_meta = {}
+    poi_count = None
     if map_db.is_file() and map_db.stat().st_size > 0:
         add_item(sec_map, 'Banco do mapa (map.sqlite)', 'ok', f'Presente ({_gb(map_db.stat().st_size)})')
+        try:
+            con = sqlite3.connect(f'{map_db.resolve().as_uri()}?mode=ro', uri=True)
+            try:
+                map_meta = dict(con.execute('SELECT key, value FROM meta').fetchall())
+                poi_count = con.execute('SELECT COUNT(*) FROM poi').fetchone()[0]
+            finally:
+                con.close()
+        except (OSError, sqlite3.Error):
+            pass
     else:
         add_item(sec_map, 'Banco do mapa (map.sqlite)', 'error', 'Mapa base ausente.')
-    osm_meta = geo / 'osm_br.json'
-    if osm_meta.is_file():
+    if has_map_set:
         try:
-            om = json.loads(osm_meta.read_text(encoding='utf-8'))
-            add_item(sec_map, 'Mapa estadual OpenStreetMap', 'ok', f"Estado {om.get('state_name') or om.get('state')} · {om.get('places_count', 0)} localidades")
-        except (OSError, ValueError):
-            add_item(sec_map, 'Mapa estadual OpenStreetMap', 'warn', 'osm_br.json inválido.')
+            ms = install.check_map(data)
+            add_item(sec_map, 'Conjunto de mapa (map-set.json)', 'ok', f"{ms.get('name', 'padrão')} · {len(ms.get('files') or {})} arquivo(s) conferido(s)")
+        except install.Refused as e:
+            add_item(sec_map, 'Conjunto de mapa (map-set.json)', 'error', e.message)
+    places_count = None
+    places_db = geo / 'places.sqlite'
+    if places_db.is_file() and places_db.stat().st_size > 0:
+        try:
+            pcon = sqlite3.connect(f'{places_db.resolve().as_uri()}?mode=ro', uri=True)
+            try:
+                places_count = pcon.execute('SELECT COUNT(*) FROM place').fetchone()[0]
+            finally:
+                pcon.close()
+        except (OSError, sqlite3.Error):
+            pass
+    uf_code = str(map_meta.get('state') or '').upper()
+    if uf_code in osm_br.BR_STATES:
+        state_name = osm_br.BR_STATES[uf_code][0]
+        parts = [f'{state_name} ({uf_code})']
+        if poi_count is not None:
+            parts.append(f'{poi_count:,} pontos de apoio')
+        if places_count is not None:
+            parts.append(f'{places_count:,} localidades')
+        if map_meta.get('built'):
+            parts.append(f"gerado em {map_meta['built'][:10]}")
+        add_item(sec_map, 'Mapa estadual OpenStreetMap', 'ok', ' · '.join(parts))
+    else:
+        osm_meta = geo / 'osm_br.json'
+        if osm_meta.is_file():
+            try:
+                om = json.loads(osm_meta.read_text(encoding='utf-8'))
+                add_item(sec_map, 'Mapa estadual OpenStreetMap', 'ok', f"Estado {om.get('state_name') or om.get('state')} · {om.get('places_count', 0)} localidades")
+            except (OSError, ValueError):
+                add_item(sec_map, 'Mapa estadual OpenStreetMap', 'warn', 'osm_br.json inválido.')
     addr_dir = geo / 'addresses'
     addr_dbs = sorted(addr_dir.glob('*.sqlite')) if addr_dir.is_dir() else []
     if addr_dbs:
@@ -125,6 +186,11 @@ def run_check(full=False, data_dir=None):
                 add_item(sec_zim, title, 'error', 'Checksum SHA-256 inválido! Baixe este arquivo novamente.')
             else:
                 add_item(sec_zim, title, 'ok', f'{entries:,} entradas · busca {"ativa" if has_idx else "por título"} · {_gb(sz)}' + (' · SHA-256 OK' if full and spec else ''))
+        except ImportError:
+            if full and spec and _sha256_file(zp) != spec['sha256']:
+                add_item(sec_zim, title, 'error', 'Checksum SHA-256 inválido! Baixe este arquivo novamente.')
+            else:
+                add_item(sec_zim, title, 'warn', f'libzim indisponível neste ambiente; tamanho OK ({_gb(sz)})' + (' · SHA-256 OK' if full and spec else ''))
         except Exception as e:
             add_item(sec_zim, title, 'error', f'Arquivo .zim não pôde ser aberto ({type(e).__name__}).')
     sections.append(sec_zim)
@@ -168,12 +234,19 @@ def run_check(full=False, data_dir=None):
     for vp in vfiles:
         try:
             env = json.loads(vp.read_text(encoding='utf-8'))
-            if env.get('v') == 1 and all(env.get(k) for k in ('salt', 'nonce', 'mac', 'data')):
-                add_item(sec_vault, f"Cofre “{env.get('name') or vp.stem}”", 'ok', f'Cabeçalho e HMAC íntegros · {vp.stat().st_size:,} bytes')
-            else:
+            if not isinstance(env, dict) or env.get('v') != 1:
                 add_item(sec_vault, vp.name, 'error', 'Estrutura de cofre inválida.')
-        except (OSError, ValueError):
-            add_item(sec_vault, vp.name, 'error', 'Não foi possível ler este arquivo de cofre.')
+                continue
+            salt = base64.b64decode(env.get('salt') or '', validate=True)
+            nonce = base64.b64decode(env.get('nonce') or '', validate=True)
+            mac = base64.b64decode(env.get('mac') or '', validate=True)
+            ct = base64.b64decode(env.get('data') or '', validate=True)
+            if len(salt) != 16 or len(nonce) != 16 or len(mac) != 32 or not ct:
+                add_item(sec_vault, f"Cofre “{env.get('name') or vp.stem}”", 'error', 'Cabeçalho criptográfico inválido ou incompleto.')
+            else:
+                add_item(sec_vault, f"Cofre “{env.get('name') or vp.stem}”", 'ok', f'Estrutura criptográfica válida (PBKDF2 + HMAC-SHA256) · {vp.stat().st_size:,} bytes')
+        except (OSError, ValueError, TypeError, binascii.Error):
+            add_item(sec_vault, vp.name, 'error', 'Arquivo de cofre ilegível ou corrompido.')
     try:
         du = shutil.disk_usage(data)
         status_disk = 'ok' if du.free > 1_000_000_000 else 'warn'

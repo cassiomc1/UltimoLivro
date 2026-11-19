@@ -73,7 +73,7 @@
   let folder = '';
   let shortfall = null;   // the answer to a start that had no room: {need_bytes, free_bytes}
   let pollT = 0;
-  let confirmCancel = false, confirmRemove = false, confirmOld = false;
+  let confirmCancel = false, confirmRemove = false, confirmOld = false, confirmZim = '';
   let note = '', noteOk = false;
   let repair = null;      // a repair under way: {fixed} turns true once it had to download something
 
@@ -222,7 +222,7 @@
     else if (view === 'done') doneView();
     if (focus) { const h = main.querySelector('h1'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) } scrollTo(0, 0) }
   }
-  function go(v) { view = v; confirmCancel = confirmRemove = confirmOld = false; note = ''; render(true) }
+  function go(v) { view = v; confirmCancel = confirmRemove = confirmOld = false; confirmZim = ''; note = ''; render(true) }
 
   /* ---- this computer */
   function computer() {
@@ -435,7 +435,10 @@
     const zimsList = (S.zims || []).map(z => {
       const got = hasZim(z);
       return `<div class="s-row">${ico('book', 's-ri')}<span><b>${esc(z.title)}</b>${got ? ' <span class="s-badge here">Instalada</span>' : ''}<small>${esc(z.group)} · ${size(z.size)} · ${esc(z.summary)}</small></span>
-        ${got ? `<button class="btn plain" data-rmzim="${esc(z.id)}">Remover</button>` : `<button class="btn plain" data-getzim="${esc(z.id)}">${ico('down')}Baixar</button>`}</div>`;
+        ${got ? (confirmZim === z.id
+          ? `<span class="s-confirm"><button class="btn danger" data-rmzim-yes="${esc(z.id)}">Remover</button><button class="btn plain" data-rmzim-no="${esc(z.id)}">Manter</button></span>`
+          : `<button class="btn plain" data-rmzim="${esc(z.id)}">Remover</button>`)
+        : `<button class="btn plain" data-getzim="${esc(z.id)}">${ico('down')}Baixar</button>`}</div>`;
     }).join('');
     const activeSel = curMs.length > 1 ? `<div class="s-row">${ico('ai', 's-ri')}<span><b>Modelo ativo no Chat</b><small>Vários modelos instalados — alterne quando quiser:</small></span><select id="mgModelSel" class="s-select" style="width:auto;max-width:260px">${curMs.map(id => { const mm = modelById(id) || { id, title: id }; return `<option value="${esc(id)}"${id === c.model ? ' selected' : ''}>${esc(mm.title || id)}</option>` }).join('')}</select></div>` : '';
     main.innerHTML = `<h1>Biblioteca e IA local</h1>
@@ -460,11 +463,15 @@
     if ($('#addAi')) $('#addAi').onclick = () => { choice.pack = c.pack; choice.ai = true; choice.model = bestM ? bestM.id : null; go('choose') };
     if ($('#chgAi')) $('#chgAi').onclick = () => { choice.pack = c.pack; choice.ai = true; choice.model = altModels[0].id; go('choose') };
     if ($('#mgModelSel')) $('#mgModelSel').onchange = async () => {
-      const mid = $('#mgModelSel').value;
+      const sel = $('#mgModelSel'), mid = sel.value;
+      sel.disabled = true;
       try {
-        await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'select', model_id: mid }) });
-        noteOk = true; note = 'Modelo de IA ativo alterado.'; S = await call('state').catch(() => S); manageView();
-      } catch { }
+        const res = await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'select', model_id: mid }) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.error) { noteOk = false; note = d.error || 'Não foi possível trocar o modelo de IA.' }
+        else { noteOk = true; note = 'Modelo de IA ativo alterado.'; S = await call('state').catch(() => S) }
+      } catch { noteOk = false; note = 'Não foi possível trocar o modelo de IA.' }
+      manageView();
     };
     main.querySelectorAll('[data-getzim]').forEach(b => b.onclick = async () => {
       b.disabled = true;
@@ -472,7 +479,9 @@
       if (!r || r.error) { noteOk = false; note = (r && r.error) || 'Não foi possível iniciar o download da enciclopédia.'; manageView(); return }
       S.job = r; go('job'); poll();
     });
-    main.querySelectorAll('[data-rmzim]').forEach(b => b.onclick = () => act('remove-zim', 'Enciclopédia removida deste computador.', { zim: b.dataset.rmzim }));
+    main.querySelectorAll('[data-rmzim]').forEach(b => b.onclick = () => { confirmZim = b.dataset.rmzim; manageView(); const no = main.querySelector(`[data-rmzim-no="${CSS.escape(confirmZim)}"]`); if (no) no.focus() });
+    main.querySelectorAll('[data-rmzim-no]').forEach(b => b.onclick = () => { const zid = b.dataset.rmzimNo; confirmZim = ''; manageView(); const rb = main.querySelector(`[data-rmzim="${CSS.escape(zid)}"]`); if (rb) rb.focus() });
+    main.querySelectorAll('[data-rmzim-yes]').forEach(b => b.onclick = () => { confirmZim = ''; act('remove-zim', 'Enciclopédia removida deste computador.', { zim: b.dataset.rmzimYes }) });
     if ($('#rmAi')) $('#rmAi').onclick = () => { confirmRemove = true; manageView(); $('#rmNo').focus() };
     if ($('#rmNo')) $('#rmNo').onclick = () => { confirmRemove = false; manageView(); $('#rmAi').focus() };
     if ($('#rmYes')) $('#rmYes').onclick = () => act('remove-ai', 'A IA local foi removida.');   // the engine stops the AI first
@@ -487,7 +496,7 @@
   }
   async function act(path, done, body) {
     const r = await call(path, body || {}).catch(e => ({ error: e.status === 404 ? 'Esta versão do Último Livro ainda não faz isso.' : e.message }));
-    confirmRemove = confirmOld = false;
+    confirmRemove = confirmOld = false; confirmZim = '';
     noteOk = !(r && r.error);
     if (r && r.error) note = r.error;
     else { note = done; S = await call('state').catch(() => S) }
@@ -638,6 +647,7 @@
     if (e.key !== 'Escape') return;
     if (confirmCancel) { confirmCancel = false; jobView(S.job); const b = main.querySelector('[data-act="cancel"]'); if (b) b.focus() }
     else if (confirmRemove || confirmOld) { const f = confirmRemove ? '#rmAi' : '#rmOld'; confirmRemove = confirmOld = false; manageView(); $(f).focus() }
+    else if (confirmZim) { const zid = confirmZim; confirmZim = ''; manageView(); const b = main.querySelector(`[data-rmzim="${CSS.escape(zid)}"]`); if (b) b.focus() }
   });
   /* the window comes back to the front: the job may have moved on, or a restart paused it */
   addEventListener('focus', () => { if (view === 'job') call('job').then(j => { if (j) { S.job = j; jobView(j); poll() } }).catch(() => { }) });
