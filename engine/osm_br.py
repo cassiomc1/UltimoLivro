@@ -24,6 +24,8 @@ def ro_uri(path):
 USER_AGENT = 'UltimoLivro/1.0 (https://www.openstreetmap.org/)'
 _Q = 1e6
 _OSM_LOCK = threading.Lock()
+_OSM_SEM = threading.Semaphore(4)
+_TILE_FAIL = {}
 _CACHE_LOCK = threading.Lock()
 
 # (Nome do estado, Capital, lat capital, lon capital, [west, south, east, north])
@@ -527,14 +529,20 @@ def fetch_osm_tile(z, x, y, cache_dir):
             return tile_file.read_bytes()
     except OSError:
         pass
+    tile_key = (z, x, y)
+    now = time.time()
+    with _OSM_LOCK:
+        fail_at = _TILE_FAIL.get(tile_key)
+        if fail_at is not None and now - fail_at < 30:
+            return None
     url = f'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT, 'Accept': 'image/png,*/*'})
     ctx = ssl.create_default_context()
     try:
-        with _OSM_LOCK:
+        with _OSM_SEM:
             if tile_file.is_file():
                 return tile_file.read_bytes()
-            with urllib.request.urlopen(req, context=ctx, timeout=12) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
                 if resp.status != 200:
                     return None
                 data = resp.read(2 << 20)
@@ -544,8 +552,19 @@ def fetch_osm_tile(z, x, y, cache_dir):
         tmp = tile_file.with_suffix(f'.{threading.get_ident()}.tmp')
         tmp.write_bytes(data)
         os.replace(tmp, tile_file)
+        with _OSM_LOCK:
+            _TILE_FAIL.pop(tile_key, None)
         return data
     except (OSError, urllib.error.URLError, ValueError):
+        with _OSM_LOCK:
+            if len(_TILE_FAIL) >= 512:
+                cutoff = time.time() - 30
+                stale = [k for k, ts in _TILE_FAIL.items() if ts < cutoff]
+                for k in stale:
+                    _TILE_FAIL.pop(k, None)
+                if len(_TILE_FAIL) >= 512:
+                    _TILE_FAIL.pop(next(iter(_TILE_FAIL)), None)
+            _TILE_FAIL[tile_key] = time.time()
         return None
 
 
@@ -636,7 +655,15 @@ def search_places(query, geo_dir, limit=12, near=None):
     q = (query or '').strip()
     if not q:
         return []
-    cache_key = q.lower()
+    q_no_prefix = re.sub(r'^\s*cep\b[:\s-]*', '', q, flags=re.I).strip()
+    m_cep = re.fullmatch(r'(\d{5})-?(\d{3})', q_no_prefix)
+    near_cell = None
+    if near is not None and not m_cep:
+        try:
+            near_cell = f'{round(float(near[0]), 1)},{round(float(near[1]), 1)}'
+        except (TypeError, ValueError, IndexError):
+            near_cell = None
+    cache_key = f'{q.lower()}|{near_cell}' if near_cell else q.lower()
     cached = _lookup_cached(geo_dir, cache_key)
     if cached is not None:
         return cached[:limit]
@@ -649,8 +676,6 @@ def search_places(query, geo_dir, limit=12, near=None):
         ctx = ssl.create_default_context()
 
     # Check if query is or contains an 8-digit Brazilian CEP (with optional house number, e.g. "01310-100" or "CEP 01310-100").
-    q_no_prefix = re.sub(r'^\s*cep\b[:\s-]*', '', q, flags=re.I).strip()
-    m_cep = re.fullmatch(r'(\d{5})-?(\d{3})', q_no_prefix)
     if m_cep:
         cep = m_cep.group(1) + m_cep.group(2)
         cep_fmt = f'{m_cep.group(1)}-{m_cep.group(2)}'

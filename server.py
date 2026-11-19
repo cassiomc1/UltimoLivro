@@ -2157,6 +2157,8 @@ class Handler(library.Handler):
                     return self.send_json(vault.open_vault(req.get('id'), req.get('password'), data_dir=HERE))
                 if act == 'save':
                     return self.send_json(vault.save_vault(req.get('id'), req.get('password'), req.get('payload'), req.get('name'), data_dir=HERE))
+                if act == 'change_password':
+                    return self.send_json(vault.change_password(req.get('id'), req.get('password'), req.get('new_password'), data_dir=HERE))
                 if act == 'delete':
                     return self.send_json(vault.delete_vault(req.get('id'), req.get('password'), data_dir=HERE))
                 return self.send_json({'error': 'ação inválida'}, 400)

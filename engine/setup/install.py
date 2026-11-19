@@ -271,6 +271,33 @@ def carry_over(old, new):
     if state.is_file() and not (new / 'derived' / 'llm' / 'state.json').exists():
         (new / 'derived' / 'llm').mkdir(parents=True, exist_ok=True)
         shutil.copy2(state, new / 'derived' / 'llm' / 'state.json')
+    vaults = old / 'derived' / 'vault'
+    if vaults.is_dir():
+        dest_dir = new / 'derived' / 'vault'
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for source in vaults.iterdir():
+            dest = dest_dir / source.name
+            if source.is_file() and source.suffix.lower() == '.lbvault' and not dest.exists():
+                shutil.copy2(source, dest)
+                moved.append(dest)
+    zims = old / 'library-data' / 'collections'
+    if zims.is_dir():
+        dest_dir = new / 'library-data' / 'collections'
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for source in zims.iterdir():
+            dest = dest_dir / source.name
+            if source.is_file() and source.suffix.lower() == '.zim' and not dest.exists():
+                os.replace(source, dest)
+                moved.append(dest)
+    translations = old / 'derived' / 'translations'
+    if translations.is_dir():
+        dest_dir = new / 'derived' / 'translations'
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for source in translations.iterdir():
+            dest = dest_dir / source.name
+            if source.is_file() and source.suffix.lower() == '.json' and not dest.exists():
+                os.replace(source, dest)
+                moved.append(dest)
     return moved
 
 

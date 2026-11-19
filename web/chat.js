@@ -148,9 +148,12 @@ const Chat = (() => {
     if (msel) msel.onchange = async () => {
       msel.disabled = true;
       try {
-        await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'select', model_id: msel.value }) });
-        toast('Trocando modelo de IA local…');
-      } catch { }
+        const r = await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'select', model_id: msel.value }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.error) toast(d.error || 'Não foi possível trocar o modelo de IA.');
+        else toast('Trocando modelo de IA local…');
+      } catch { toast('Não foi possível trocar o modelo de IA.') }
+      msel.disabled = false;
       setTimeout(statusLine, 500);
     };
     const sb = $('#sendBtn'); if (sb) sb.title = s.online ? 'Enviar' : 'O assistente está offline; você receberá as páginas correspondentes';
@@ -167,9 +170,9 @@ const Chat = (() => {
     box.innerHTML = l.state === 'off'
       ? `<p>A IA local está desligada.</p><div class="row"><button class="btn" data-ai="on">Ligar</button></div>`
       : l.state === 'error' ? `<p>${esc(l.message || 'A IA local não pôde iniciar.')}</p><div class="row"><button class="btn" data-ai="rescan">Verificar novamente</button></div>`
-      : `<p><b>Adicione a IA local para receber respostas escritas.</b> Ela tem cerca de 17 GB e roda apenas neste computador.</p>
+      : `<p><b>Adicione uma IA local para receber respostas escritas.</b> Há opções de ~508 MB (4 GB RAM) até 17 GB rodando 100% neste computador.</p>
          <div class="row"><a class="btn" href="/ui/setup.html#manage">Adicionar IA local</a><button class="btn plain" data-ai="rescan">Verificar novamente</button></div>
-         <p class="small">Já baixou <code>${esc(l.file)}</code>? Coloque na pasta <b>LastbookData</b> ou em Downloads e clique em Verificar novamente.</p>`;
+         <p class="small">Já baixou <code>${esc(l.file)}</code>? Coloque na pasta <b>LastbookData/models</b> ou escolha o arquivo em <b>Biblioteca e IA local</b> e clique em Verificar novamente.</p>`;
     $$('[data-ai]', box).forEach(b => b.onclick = async () => {
       b.disabled = true;
       try { await fetch('/api/assistant/local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: b.dataset.ai }) }) } catch { }
@@ -277,7 +280,10 @@ const Chat = (() => {
   }
   function srcHref(s) {
     if (s.kind === 'place') return `#/map?lat=${s.lat}&lon=${s.lon}&z=16&pin=${encodeURIComponent(s.title || s.name || 'Local da resposta')}`;
-    if (s.kind === 'zim' || String(s.doc_id || '').startsWith('zim:')) return `#/wiki/${String(s.doc_id || '').replace(/^zim:/, '')}?from=${encodeURIComponent(here())}`;
+    if (s.kind === 'zim' || String(s.doc_id || '').startsWith('zim:')) {
+      const zp = String(s.doc_id || '').replace(/^zim:/, '').split('/').map(encodeURIComponent).join('/');
+      return `#/wiki/${zp}?from=${encodeURIComponent(here())}`;
+    }
     if (s.kind === 'video') return `#/watch/${encodeURIComponent(s.doc_id)}?${s.t != null ? 't=' + Math.floor(s.t) + '&' : ''}from=${encodeURIComponent(here())}`;
     return `#/read/${encodeURIComponent(s.doc_id)}?${s.page ? 'p=' + s.page + '&' : ''}from=${encodeURIComponent(here())}`;
   }
@@ -453,6 +459,7 @@ const Chat = (() => {
           redraw();
         }
       }
+      if (m._needFallback) { delete m._needFallback; await fallback(m, text) }
       if (m.running && !m.content && !m.error) m.error = 'A resposta parou inesperadamente.';
     } catch (e) {
       if (e.name === 'AbortError') { m.stopped = true; if (!m.content) m.error = 'Interrompido.' }
@@ -474,7 +481,7 @@ const Chat = (() => {
     else if (ev.type === 'reset') m.content = '';
     else if (ev.type === 'done') { m.content = ev.answer; m.cited = ev.sources; m.consulted = ev.consulted; m.invalid = ev.invalid; m.latency = ev.latency; m.content = m.content.replace(/\[([SM]\d+)\]/g, (x, k) => (ev.invalid || []).includes(k) ? '' : x) }
     else if (ev.type === 'error') {
-      if (ev.error === 'model_unavailable') { m.offline = true; m.error = ev.text; fallback(m, (cur.messages[cur.messages.length - 2] || {}).content || '') }
+      if (ev.error === 'model_unavailable') { m.offline = true; m.error = ev.text; m._needFallback = true }
       else { m.error = ev.text; if (ev.sources) m.fallback = ev.sources.slice(0, 8) }
     }
     else if (ev.type === 'stopped') m.stopped = true;

@@ -46,6 +46,13 @@ SPOOL_AT = 16 * MiB                 # buffer mode: a larger generated body goes 
 PER_REQUEST = 8 * MiB               # stream mode: most unacknowledged bytes for one request
 TICKET_LIFE = 30
 MAX_POST = 256 * 1024               # the engine's own limit on a chat request is 200,000 bytes
+MAX_VAULT_POST = 4 * 1024 * 1024    # vault payloads (with encrypted attachments) allow up to 4 MB
+
+
+def max_post_for(path_or_url):
+    """Maximum POST body size allowed for the given request path or URL."""
+    path = urllib.parse.urlsplit(str(path_or_url or '')).path
+    return MAX_VAULT_POST if path == '/api/vault' else MAX_POST
 MAX_STREAMS = 4                     # chat polls at one time
 STREAM_IDLE = 120                   # a poll stream nobody has asked about for this long is cancelled
 POLL_WAIT = 15
@@ -901,7 +908,7 @@ class Bridge:
                 return self._refusal('post-type', 403, 'Forbidden', url), None
             if not self.has_key(low):
                 return self._refusal('post-key', 403, 'Forbidden', url), None
-            if body is not None and len(body) > MAX_POST:
+            if body is not None and len(body) > max_post_for(path):
                 return self._refusal('post-size', 413, 'Too Large', url), None
         elif poll:
             return self._refusal('poll-method', 403, 'Forbidden', url), None

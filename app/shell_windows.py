@@ -921,19 +921,19 @@ class Shell:
             return
         method = str(req.Method)
         headers = [(str(h.Key), str(h.Value)) for h in req.Headers]
-        body = self.read_body(req.Content) if method == 'POST' else None
+        body = self.read_body(req.Content, B.max_post_for(uri)) if method == 'POST' else None
         document = args.ResourceContext == self.n.Core.CoreWebView2WebResourceContext.Document
         deferral = args.GetDeferral()
         self.b.fetch(method, uri, headers, body, lambda r: self.answer(args, deferral, method, r), is_document=document)
 
-    def read_body(self, stream):
+    def read_body(self, stream, limit=B.MAX_POST):
         """A page can POST any size. One byte past the limit is enough for the bridge to refuse it, so no more than that is read."""
         if stream is None:
             return b''
         n = self.n
         chunk = n.System.Array.CreateInstance(n.System.Byte, 65536)
         out = n.IO.MemoryStream()
-        while out.Length <= B.MAX_POST:
+        while out.Length <= limit:
             got = stream.Read(chunk, 0, chunk.Length)
             if got <= 0:
                 break
@@ -944,7 +944,7 @@ class Shell:
             return b''
         buf = ctypes.create_string_buffer(size)
         n.Marshal.Copy(arr, 0, n.System.IntPtr(ctypes.addressof(buf)), size)
-        return buf.raw
+        return buf.raw[:limit + 1]
 
     def to_net(self, data):
         n = self.n

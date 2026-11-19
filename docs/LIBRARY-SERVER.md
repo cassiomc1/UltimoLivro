@@ -62,7 +62,7 @@ No aplicativo empacotado: Python do ambiente (`packaging/requirements*.txt`), `e
 
 ## Novos endpoints locais (inspirados no refugiOS)
 
-- **Cofre Criptografado (`engine/vault.py`):** `GET /api/vault/list` e `POST /api/vault` (`create`, `open`, `save`, `delete`). Restrito a loopback (`127.0.0.1` / `::1`) por segurança, utilizando derivação PBKDF2-HMAC-SHA256 (250.000 iterações), cifra de fluxo `BLAKE2b` e autenticação `HMAC-SHA256` em `derived/vault/`.
+- **Cofre Criptografado (`engine/vault.py`):** `GET /api/vault/list` e `POST /api/vault` (`create`, `open`, `save`, `change_password`, `delete`). Restrito a loopback (`127.0.0.1` / `::1`) por segurança, utilizando derivação PBKDF2-HMAC-SHA256 (250.000 iterações), cifra de fluxo `BLAKE2b` e autenticação `HMAC-SHA256` em `derived/vault/` (com suporte a anexos cifrados no app desktop e no servidor web até 4 MB).
 - **Tradutor Offline (`engine/translator.py`):** `GET /api/translate/glossary` (guia rápido PT/EN/ES embutido) e `POST /api/translate` (tradução via IA local com cache por página em `derived/translations/`, ou fallback automático por glossário técnico).
 - **Diagnóstico de Integridade (`engine/checker.py`):** `GET /api/check` (`?full=1` para recomputar SHA-256). Verifica biblioteca base, mapas estaduais, `.zim`, `.gguf`/RAM, cofres e disco, gravando `derived/logs/relatorio-verificacao.txt` (restrito a loopback).
 

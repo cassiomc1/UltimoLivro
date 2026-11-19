@@ -275,7 +275,7 @@ class _Task(B.Sink):
         self.finish(False)
 
 
-def _read_body(req):
+def _read_body(req, limit=B.MAX_POST):
     """A POST's body, read no further than the most the bridge would take: past that it refuses by length alone."""
     try:
         stream = req.get_http_body()
@@ -285,7 +285,7 @@ def _read_body(req):
         return None
     out = bytearray()
     try:
-        while len(out) <= B.MAX_POST:
+        while len(out) <= limit:
             piece = stream.read_bytes(65536, None)
             if not piece or piece.get_size() == 0:
                 break
@@ -295,7 +295,7 @@ def _read_body(req):
             stream.close(None)
         except GLib.Error:
             pass
-    return bytes(out[:B.MAX_POST + 1])
+    return bytes(out[:limit + 1])
 
 
 def _headers(req):
@@ -490,9 +490,10 @@ class Shell:
             t = _Task(req)
             method = req.get_http_method() if hasattr(req, 'get_http_method') else 'GET'
             method = str(method or 'GET')
+            url = str(req.get_uri())
             headers = _headers(req)
-            body = _read_body(req) if method == 'POST' and self.bridge.has_key(headers) else None   # with no key it is refused unread
-            t.ex = self.bridge.start(method, str(req.get_uri()), headers, body, t)
+            body = _read_body(req, B.max_post_for(url)) if method == 'POST' and self.bridge.has_key(headers) else None   # with no key it is refused unread
+            t.ex = self.bridge.start(method, url, headers, body, t)
         except Exception:
             traceback.print_exc()
 

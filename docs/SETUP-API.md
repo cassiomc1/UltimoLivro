@@ -6,7 +6,7 @@ Um download por computador: aplicativo macOS, instalador Windows (`Setup.exe`) o
 
 - **Única saída para a rede:** o módulo `engine/setup/download.py` é o único código do aplicativo autorizado a acessar a internet, e somente quando a pessoa inicia ou retoma um download (além dos tiles/buscas OpenStreetMap iniciados explicitamente pela interface do mapa via `engine/osm_br.py`). Usa apenas HTTPS na porta 443 para hosts em `ALLOWED_HOSTS` / `ALLOWED_SUFFIXES`, sem proxy do sistema, seguindo redirecionamentos apenas para outros hosts permitidos. Todo o restante do app bloqueia cargas web externas, não possui telemetria nem verificações em segundo plano.
 - **Sem piso arbitrário de memória:** cada um dos 4 modelos configurados em `llm_local.py` (`gemma-4-26b-a4b`, `gemma-4-e4b`, `gemma-4-e2b` e `qwen-3.5-0.8b`) é avaliado individualmente por medição ou estimativa (`llm_local.judge`) verificando se modelo + contexto cabem com folga de reserva (`2,5 GiB`). Caso algum não caiba, a interface explica o motivo em português e oferece alternativas mais compactas.
-- **Uma biblioteca funcional nunca é quebrada:** dados novos são baixados e desempacotados ao lado da instalação antiga, validados e ativados em uma única operação atômica de renomeação (`LastbookData.old-*`). Falhas em qualquer ponto preservam intacta a biblioteca anterior.
+- **Uma biblioteca funcional nunca é quebrada:** dados novos são baixados e desempacotados ao lado da instalação antiga, validados e ativados em uma única operação atômica de renomeação (`LastbookData.old-*`). Modelos locais, índices de endereços, cofres (`derived/vault/*.lbvault`), enciclopédias `.zim` (`library-data/collections/*.zim`) e traduções em cache (`derived/translations/`) são preservados por `install.carry_over()`. Falhas em qualquer ponto preservam intacta a biblioteca anterior.
 
 ## Organização dos módulos
 
@@ -66,7 +66,7 @@ Tráfego em JSON pela ponte em memória (ou apenas loopback no modo servidor; di
 | `POST /api/setup/start` `{repair: true, ai}` | Modo manutenção: confere cada arquivo contra `pack-manifest.tsv` e SHA-256 do modelo e baixa novamente apenas o que estiver corrompido ou ausente |
 | `GET /api/setup/job` | Estado atual de `job` |
 | `POST /api/setup/pause`, `/resume`, `/cancel`, `/retry` | Controla o `job` em andamento ou com falha |
-| `POST /api/setup/use` `{path}` | Verifica e utiliza pacote, mapa, índice de endereços, modelo ou pasta `LastbookData` já existente |
+| `POST /api/setup/use` `{path}` | Verifica e utiliza pacote, mapa, índice de endereços, enciclopédia `.zim`, modelo ou pasta `LastbookData` já existente |
 | `POST /api/setup/finish` | Grava a pasta escolhida em `settings.json` e reinicia/reabre o aplicativo na biblioteca pronta |
 | `POST /api/setup/pick` `{files?}` | Abre seletor nativo e retorna `{path, free_bytes, disk}` ou `{path: null, cancelled: true}` |
 | `POST /api/setup/delete-old` `{path}` | Remove uma cópia antiga `LastbookData.old-*` movida anteriormente pelo setup |
@@ -80,7 +80,7 @@ Os estados do trabalho em `job.json` (armazenado na pasta de configurações do 
 
 O setup permite instalar um pacote de biblioteca junto ou separadamente de um **mapa estadual brasileiro** via OpenStreetMap (`engine/osm_br.py`), um **índice de endereços** (`address_indexes`, por UF de 2 letras `[A-Z]{2}` — contemplando as 27 UFs brasileiras) e **enciclopédias `.zim` em português do Kiwix** (`engine/kiwix_br.py`, inspiradas no catálogo do [refugiOS](https://github.com/Ganso/refugiOS)).
 
-- Para mapas estaduais brasileiros (`osm_br: true`), `engine/setup/api.py` delega a `osm_br.build_state_map()` a montagem de `map.sqlite`, `places.sqlite`, `derived/geo/osm_br.json` e `derived/geo/addresses/<UF>.sqlite` a partir dos limites oficiais e consultas Overpass/Nominatim.
+- Para mapas estaduais brasileiros (`osm_br: true`), `engine/setup/api.py` delega a `osm_br.build_state_map()` a montagem de `map.sqlite` (com metadados de estado na tabela `meta`), `places.sqlite`, `map-set.json` e `derived/geo/addresses/<UF>.sqlite` a partir dos limites oficiais e consultas OpenStreetMap/Nominatim.
 - Para enciclopédias Kiwix PT (`kind: "zim"`), o arquivo `.zim` é baixado e conferido pelo SHA-256 em `engine/kiwix_br.py` e salvo em `LastbookData/library-data/collections/`.
 - Na tela de setup (`web/setup.js`), o usuário escolhe o país/estado (UF) manualmente; nenhum componente faz geolocalização automática.
 - Pacotes `base`, `us` e `br` encaminham a escolha padrão de endereços sem exigir um código estadual específico em `engine/setup/api.py`.
